@@ -107,12 +107,12 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 
 	for i := range nack.Nacks {
 		nack.Nacks[i].Range(func(seq uint16) bool {
-			fmt.Println("==== need to resend nack for SN ", seq)
+			fmt.Println("==== ", time.Now().Format("2006-01-02 15:04:05.000"), " need to resend nack for SN ", seq)
 			if p := stream.sendBuffer.get(seq); p != nil {
 				if _, err := stream.rtpWriter.Write(&p.Header, p.Payload, interceptor.Attributes{}); err != nil {
 					n.log.Warnf("failed resending nacked packet: %+v", err)
 				}else{
-					fmt.Println("==== resent nack for SN ", seq)
+					fmt.Println("==== ", time.Now().Format("2006-01-02 15:04:05.000"), " resent nack for SN ", seq)
 				}
 			}
 
