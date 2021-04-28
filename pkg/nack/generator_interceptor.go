@@ -24,6 +24,7 @@ type GeneratorInterceptor struct {
 
 	receiveLogs   map[uint32]*receiveLog
 	receiveLogsMu sync.Mutex
+	nacketPackets func([]uint16)
 }
 
 // NewGeneratorInterceptor returns a new GeneratorInterceptor interceptor
@@ -35,6 +36,31 @@ func NewGeneratorInterceptor(opts ...GeneratorOption) (*GeneratorInterceptor, er
 		receiveLogs: map[uint32]*receiveLog{},
 		close:       make(chan struct{}),
 		log:         logging.NewDefaultLoggerFactory().NewLogger("nack_generator"),
+	}
+
+	for _, opt := range opts {
+		if err := opt(r); err != nil {
+			return nil, err
+		}
+	}
+
+	if _, err := newReceiveLog(r.size); err != nil {
+		return nil, err
+	}
+
+	return r, nil
+}
+
+// NewGeneratorInterceptor returns a new GeneratorInterceptor interceptor
+func NewGeneratorInterceptorWithCallback(nackedPackets func([]uint16), opts ...GeneratorOption) (*GeneratorInterceptor, error) {
+	r := &GeneratorInterceptor{
+		size:        8192,
+		skipLastN:   0,
+		interval:    time.Millisecond * 100,
+		receiveLogs: map[uint32]*receiveLog{},
+		close:       make(chan struct{}),
+		log:         logging.NewDefaultLoggerFactory().NewLogger("nack_generator"),
+		nacketPackets: nackedPackets,
 	}
 
 	for _, opt := range opts {
@@ -134,6 +160,10 @@ func (n *GeneratorInterceptor) loop(rtcpWriter interceptor.RTCPWriter) {
 					missing := receiveLog.missingSeqNumbers(n.skipLastN)
 					if len(missing) == 0 {
 						continue
+					}
+
+					if n.nacketPackets != nil{
+						n.nacketPackets(missing)
 					}
 
 					nack := &rtcp.TransportLayerNack{
