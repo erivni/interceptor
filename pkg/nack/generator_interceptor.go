@@ -52,6 +52,7 @@ type GeneratorInterceptor struct {
 
 	receiveLogs   map[uint32]*receiveLog
 	receiveLogsMu sync.Mutex
+	nacketPackets func([]uint16)
 }
 
 // NewGeneratorInterceptor returns a new GeneratorInterceptorFactory
@@ -146,6 +147,10 @@ func (n *GeneratorInterceptor) loop(rtcpWriter interceptor.RTCPWriter) {
 					missing := receiveLog.missingSeqNumbers(n.skipLastN)
 					if len(missing) == 0 {
 						continue
+					}
+
+					if n.nacketPackets != nil {
+						n.nacketPackets(missing)
 					}
 
 					nack := &rtcp.TransportLayerNack{
