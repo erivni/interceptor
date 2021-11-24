@@ -42,3 +42,11 @@ func GeneratorInterval(interval time.Duration) GeneratorOption {
 		return nil
 	}
 }
+
+// NackedPackets sets the nacks that were sent
+func NackedPackets(nackedPacketsCallback func([]uint16)) GeneratorOption {
+	return func(r *GeneratorInterceptor) error {
+		r.nacketPackets = nackedPacketsCallback
+		return nil
+	}
+}
