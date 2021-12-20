@@ -137,6 +137,13 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 	for i := range nack.Nacks {
 		nack.Nacks[i].Range(func(seq uint16) bool {
 			if p := stream.sendBuffer.get(seq); p != nil {
+				var b byte = 0
+				ex := p.GetExtension(5) // setting the retransmit bit in extension
+				if ex != nil {
+					b = ex[0]
+				}
+				b |= 0x10
+				p.SetExtension(5, []byte{b})
 				if _, err := stream.rtpWriter.Write(&p.Header, p.Payload, interceptor.Attributes{}); err != nil {
 					n.log.Warnf("failed resending nacked packet: %+v", err)
 				}
