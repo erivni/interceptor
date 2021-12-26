@@ -1,14 +1,14 @@
 package nack
 
 import (
-	"os"
-	"sync"
-
 	"github.com/pion/interceptor"
 	"github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	log "github.com/sirupsen/logrus"
+	"os"
+	"strconv"
+	"sync"
 )
 
 // ResponderInterceptorFactory is a interceptor.Factory for a ResponderInterceptor
@@ -114,6 +114,20 @@ func (n *ResponderInterceptor) BindLocalStream(info *interceptor.StreamInfo, wri
 			return 0, err
 		}
 		sendBuffer.add(pkt)
+
+		percentage, _ := strconv.ParseFloat(os.Getenv("HYPERSCALE_DROPPED_PACKET_PERCENTAGE"), 64)
+		if percentage > 0 && 100/percentage > 0 &&
+			header.SequenceNumber%(uint16(100/percentage)) == 0 {
+			log.WithFields(
+				log.Fields{
+					"subcomponent":            "interceptor",
+					"sequenceNumber":          header.SequenceNumber,
+					"droppedPacketPercentage": percentage,
+					"type":                    "INTENSIVE",
+				}).Warnf("dropping rtp packet with SN %d intentially..", header.SequenceNumber)
+			return 0, nil
+		}
+
 		return writer.Write(header, payload, attributes)
 	})
 }
@@ -141,7 +155,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 				}
 				p.Release()
 			} else {
-				if os.Getenv("HYPERSCALE_WARN_MISSING_NACKED_PACKETS") == "true" {
+				if os.Getenv("HYPERSCALE_WARN_ON_MISSING_NACKED_PACKETS") == "true" {
 					log.WithFields(
 						log.Fields{
 							"subcomponent":   "interceptor",
