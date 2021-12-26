@@ -1,12 +1,14 @@
 package nack
 
 import (
+	"os"
 	"sync"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	log "github.com/sirupsen/logrus"
 )
 
 // ResponderInterceptorFactory is a interceptor.Factory for a ResponderInterceptor
@@ -138,8 +140,16 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 					n.log.Warnf("failed resending nacked packet: %+v", err)
 				}
 				p.Release()
+			} else {
+				if os.Getenv("HYPERSCALE_WARN_MISSING_NACKED_PACKETS") == "true" {
+					log.WithFields(
+						log.Fields{
+							"subcomponent":   "interceptor",
+							"sequenceNumber": seq,
+							"type":           "INTENSIVE",
+						}).Warnf("failed to get packet with SN %d from internal buffer..", seq)
+				}
 			}
-
 			return true
 		})
 	}
