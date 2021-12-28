@@ -1,14 +1,16 @@
 package nack
 
 import (
+	"fmt"
+	"os"
+	"strconv"
+	"sync"
+
 	"github.com/pion/interceptor"
 	"github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	log "github.com/sirupsen/logrus"
-	"os"
-	"strconv"
-	"sync"
 )
 
 // ResponderInterceptorFactory is a interceptor.Factory for a ResponderInterceptor
@@ -146,10 +148,22 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 	if !ok {
 		return
 	}
+	extensionId, idErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_SAMPLE_ATTR_ID")
+	retransmitPos, posErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_RETRANSMIT_ATTR_POS")
 
 	for i := range nack.Nacks {
 		nack.Nacks[i].Range(func(seq uint16) bool {
 			if p := stream.sendBuffer.get(seq); p != nil {
+				// setting the retransmit bit in extension
+				if idErr == nil && posErr == nil {
+					var b byte = 1 << retransmitPos
+					ex := p.GetExtension(extensionId)
+					if ex != nil {
+						b |= ex[0]
+					}
+					p.SetExtension(extensionId, []byte{b})
+				}
+
 				if _, err := stream.rtpWriter.Write(p.Header(), p.Payload(), interceptor.Attributes{}); err != nil {
 					n.log.Warnf("failed resending nacked packet: %+v", err)
 				}
@@ -167,4 +181,16 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 			return true
 		})
 	}
+}
+
+func getEnvVal(envVariable string) (uint8, error) {
+	envValue := os.Getenv(envVariable)
+	if envValue != "" {
+		parsed, err := strconv.ParseUint(envValue, 10, 8)
+		if err == nil {
+			return uint8(parsed), nil
+		}
+		return 0, err
+	}
+	return 0, fmt.Errorf("env variable %s does not exist", envValue)
 }
