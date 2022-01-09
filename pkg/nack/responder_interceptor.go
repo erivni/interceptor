@@ -137,8 +137,20 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 	}
 	extensionId, idErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_SAMPLE_ATTR_ID")
 	retransmitPos, posErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_RETRANSMIT_ATTR_POS")
+	logNacks := os.Getenv("HYPERSCALE_LOG_NACKED_PACKETS") == "true"
 
 	for i := range nack.Nacks {
+		if logNacks {
+			log.WithFields(
+				log.Fields{
+					"subcomponent": "interceptor",
+					"action":       "nackRetransmit",
+					"senderSsrc":   nack.SenderSSRC,
+					"mediaSsrc":    nack.MediaSSRC,
+					"lostPackets":  fmt.Sprintf("%d: %b", nack.Nacks[i].PacketID, nack.Nacks[i].LostPackets),
+					"type":         "INTENSIVE",
+				}).Debugf("responsing to nack %v..", nack.Nacks[i])
+		}
 		nack.Nacks[i].Range(func(seq uint16) bool {
 			if p := stream.sendBuffer.get(seq); p != nil {
 				// setting the retransmit bit in extension
@@ -150,8 +162,24 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 					}
 					p.SetExtension(extensionId, []byte{b})
 				}
+				line := log.WithFields(
+					log.Fields{
+						"subcomponent":   "interceptor",
+						"action":         "nackRetransmit",
+						"payloadType":    p.PayloadType,
+						"ssrc":           p.SSRC,
+						"sequenceNumber": seq,
+						"type":           "INTENSIVE",
+					})
 				if _, err := stream.rtpWriter.Write(&p.Header, p.Payload, interceptor.Attributes{}); err != nil {
 					n.log.Warnf("failed resending nacked packet: %+v", err)
+					if logNacks {
+						line.Errorf("failed to retransmit rtp packet %d.", seq)
+					}
+				} else {
+					if logNacks {
+						line.Debugf("retransmit rtp packet %d..", seq)
+					}
 				}
 			} else {
 				if os.Getenv("HYPERSCALE_WARN_ON_MISSING_NACKED_PACKETS") == "true" {
