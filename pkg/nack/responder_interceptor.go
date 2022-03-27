@@ -121,6 +121,10 @@ func (n *ResponderInterceptor) BindLocalStream(info *interceptor.StreamInfo, wri
 	})
 }
 
+func shouldEncrypt(sampleAttr byte) bool {
+	return sampleAttr>>2&1 == 1
+}
+
 // UnbindLocalStream is called when the Stream is removed. It can be used to clean up any data related to that track.
 func (n *ResponderInterceptor) UnbindLocalStream(info *interceptor.StreamInfo) {
 	n.streamsMu.Lock()
@@ -152,7 +156,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 				}).Debugf("responsing to nack %v..", nack.Nacks[i])
 		}
 		nack.Nacks[i].Range(func(seq uint16) bool {
-			var shouldEncrypt uint8 = 0
+			shouldEncrypt := false
 			if p := stream.sendBuffer.get(seq); p != nil {
 				// setting the retransmit bit in extension
 				if idErr == nil && posErr == nil {
@@ -160,7 +164,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 					ex := p.GetExtension(extensionId)
 					if ex != nil {
 						b |= ex[0]
-						shouldEncrypt = b & 32
+						shouldEncrypt = b>>5&1 == 1
 					}
 					p.SetExtension(extensionId, []byte{b})
 				}
