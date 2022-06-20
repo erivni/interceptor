@@ -142,8 +142,8 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 	extensionId, idErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_SAMPLE_ATTR_ID")
 	retransmitPos, posErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_RETRANSMIT_ATTR_POS")
 	logNacks := os.Getenv("HYPERSCALE_LOG_NACKED_PACKETS") == "true"
-	nacksSpreadDelayMs, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_SPREAD_DELAY_MS"))    // 0 is returned on error, in which case feature will be ignored later on
-	nacksMaxPacketsBurst, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_MAX_PACKET_BURST")) // 0 is returned on error, in which case feature will be ignored later on
+	nacksSpreadDelayMs, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_SPREAD_PACKETS_DELAY_MS")) // 0 is returned on error, in which case feature will be ignored later on
+	nacksMaxPacketsBurst, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_MAX_PACKET_BURST"))      // 0 is returned on error, in which case feature will be ignored later on
 
 	packetsSentWithoutDelay = 0
 	for i := range nack.Nacks {

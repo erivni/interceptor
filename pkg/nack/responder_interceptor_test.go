@@ -105,8 +105,8 @@ func TestResponderInterceptorNacksSpreadEnabled(t *testing.T) {
 
 	os.Setenv("HYPERSCALE_NACKS_MAX_PACKET_BURST", "10")
 	defer os.Unsetenv("HYPERSCALE_NACKS_MAX_PACKET_BURST")
-	os.Setenv("HYPERSCALE_NACKS_SPREAD_DELAY_MS", "1000")
-	defer os.Unsetenv("HYPERSCALE_NACKS_SPREAD_DELAY_MS")
+	os.Setenv("HYPERSCALE_NACKS_SPREAD_PACKETS_DELAY_MS", "1000")
+	defer os.Unsetenv("HYPERSCALE_NACKS_SPREAD_PACKETS_DELAY_MS")
 
 	nackWriteTimePhasesSecsCount := []int{0, 0, 0, 0, 0, 0, 0} // Stores 7s count of recieved nacks in 1s buckets
 	timeNacksStart := time.Now()
@@ -185,8 +185,8 @@ func TestResponderInterceptorNacksSpreadDisabled(t *testing.T) {
 
 	os.Setenv("HYPERSCALE_NACKS_MAX_PACKET_BURST", "0")
 	defer os.Unsetenv("HYPERSCALE_NACKS_MAX_PACKET_BURST")
-	os.Setenv("HYPERSCALE_NACKS_SPREAD_DELAY_MS", "0")
-	defer os.Unsetenv("HYPERSCALE_NACKS_SPREAD_DELAY_MS")
+	os.Setenv("HYPERSCALE_NACKS_SPREAD_PACKETS_DELAY_MS", "0")
+	defer os.Unsetenv("HYPERSCALE_NACKS_SPREAD_PACKETS_DELAY_MS")
 
 	// Send nack report for 64 missing packets
 	stream.ReceiveRTCP([]rtcp.Packet{
