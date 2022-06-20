@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/logging"
@@ -129,6 +130,9 @@ func (n *ResponderInterceptor) UnbindLocalStream(info *interceptor.StreamInfo) {
 }
 
 func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
+	var nacksSpreadDelayMs int
+	var nacksMaxPacketsBurst int
+	var packetsSentWithoutDelay int
 	n.streamsMu.Lock()
 	stream, ok := n.streams[nack.MediaSSRC]
 	n.streamsMu.Unlock()
@@ -138,7 +142,24 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 	extensionId, idErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_SAMPLE_ATTR_ID")
 	retransmitPos, posErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_RETRANSMIT_ATTR_POS")
 	logNacks := os.Getenv("HYPERSCALE_LOG_NACKED_PACKETS") == "true"
+	nacksSpreadDelayMs = 0
+	nacksMaxPacketsBurst = 0
+	nacksSpreadDelayMsStr := os.Getenv("HYPERSCALE_NACKS_SPREAD_DELAY_MS")
+	nacksMaxPacketsBurstStr := os.Getenv("HYPERSCALE_NACKS_MAX_PACKET_BURST")
+	if nacksSpreadDelayMsStr != "" {
+		parsed, err := strconv.Atoi(nacksSpreadDelayMsStr)
+		if err == nil && parsed > 0 {
+			nacksSpreadDelayMs = parsed
+		}
+	}
+	if nacksSpreadDelayMsStr != "" {
+		parsed, err := strconv.Atoi(nacksMaxPacketsBurstStr)
+		if err == nil && parsed > 0 {
+			nacksMaxPacketsBurst = parsed
+		}
+	}
 
+	packetsSentWithoutDelay = 0
 	for i := range nack.Nacks {
 		if logNacks {
 			log.WithFields(
@@ -152,6 +173,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 				}).Debugf("responsing to nack %v..", nack.Nacks[i])
 		}
 		nack.Nacks[i].Range(func(seq uint16) bool {
+			shouldEncrypt := false
 			if p := stream.sendBuffer.get(seq); p != nil {
 				// setting the retransmit bit in extension
 				if idErr == nil && posErr == nil {
@@ -159,6 +181,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 					ex := p.GetExtension(extensionId)
 					if ex != nil {
 						b |= ex[0]
+						shouldEncrypt = b>>5&1 == 1
 					}
 					p.SetExtension(extensionId, []byte{b})
 				}
@@ -169,14 +192,20 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 						"payloadType":    p.PayloadType,
 						"ssrc":           p.SSRC,
 						"sequenceNumber": seq,
+						"shouldEncrypt":  shouldEncrypt,
 						"type":           "INTENSIVE",
 					})
+				if nacksMaxPacketsBurst > 0 && nacksSpreadDelayMs > 0 && packetsSentWithoutDelay >= nacksMaxPacketsBurst {
+					packetsSentWithoutDelay = 0
+					time.Sleep(time.Duration(nacksSpreadDelayMs) * time.Millisecond)
+				}
 				if _, err := stream.rtpWriter.Write(&p.Header, p.Payload, interceptor.Attributes{}); err != nil {
 					n.log.Warnf("failed resending nacked packet: %+v", err)
 					if logNacks {
 						line.Errorf("failed to retransmit rtp packet %d.", seq)
 					}
 				} else {
+					packetsSentWithoutDelay++
 					if logNacks {
 						line.Debugf("retransmit rtp packet %d..", seq)
 					}
