@@ -46,8 +46,9 @@ type ResponderInterceptor struct {
 	size uint16
 	log  logging.LeveledLogger
 
-	streams   map[uint32]*localStream
-	streamsMu sync.Mutex
+	streams     map[uint32]*localStream
+	streamsMu   sync.Mutex
+	resendMutex *sync.Mutex
 }
 
 type localStream struct {
@@ -146,6 +147,10 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 	nacksMaxPacketsBurst, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_MAX_PACKET_BURST"))      // 0 is returned on error, in which case feature will be ignored later on
 
 	packetsSentWithoutDelay = 0
+	if n.resendMutex != nil {
+		n.resendMutex.Lock()
+		defer n.resendMutex.Unlock()
+	}
 	for i := range nack.Nacks {
 		if logNacks {
 			log.WithFields(

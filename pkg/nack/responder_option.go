@@ -1,6 +1,10 @@
 package nack
 
-import "github.com/pion/logging"
+import (
+	"sync"
+
+	"github.com/pion/logging"
+)
 
 // ResponderOption can be used to configure ResponderInterceptor
 type ResponderOption func(s *ResponderInterceptor) error
@@ -10,6 +14,13 @@ type ResponderOption func(s *ResponderInterceptor) error
 func ResponderSize(size uint16) ResponderOption {
 	return func(r *ResponderInterceptor) error {
 		r.size = size
+		return nil
+	}
+}
+
+func ResponderResendMutex(resendMutex *sync.Mutex) ResponderOption {
+	return func(r *ResponderInterceptor) error {
+		r.resendMutex = resendMutex
 		return nil
 	}
 }
