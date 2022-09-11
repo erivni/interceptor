@@ -80,7 +80,8 @@ func (n *ResponderInterceptor) BindRTCPReader(reader interceptor.RTCPReader) int
 		}
 		go func() {
 			lastBurstPackets := 0
-			if n.resendMutex != nil && len(pkts) > 0 {
+			nacksLock, _ := strconv.ParseBool(os.Getenv("HYPERSCALE_NACKS_LOCK"))
+			if nacksLock && n.resendMutex != nil && len(pkts) > 0 {
 				n.resendMutex.Lock()
 				defer n.resendMutex.Unlock()
 			}
@@ -169,7 +170,8 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 	logNacks := os.Getenv("HYPERSCALE_LOG_NACKED_PACKETS") == "true"
 	nacksSpreadDelayMs, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_SPREAD_PACKET_DELAY_MS")) // 0 is returned on error, in which case feature will be ignored later on
 	nacksMaxPacketsBurst, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_MAX_PACKET_BURST"))     // 0 is returned on error, in which case feature will be ignored later on
-	dropPercentage, _ := strconv.ParseFloat(os.Getenv("HYPERSCALE_DROPPED_PACKET_PERCENTAGE"), 64)
+	dropPercentage, _ := strconv.ParseFloat(os.Getenv("HYPERSCALE_NACKS_DROPPED_PACKET_PERCENTAGE"), 64)
+
 	packetsSentWithoutDelay = *lastBurstPackets
 	pairsCount := len(nack.Nacks)
 	for i := range nack.Nacks {
