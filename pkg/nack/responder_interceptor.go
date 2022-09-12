@@ -2,6 +2,7 @@ package nack
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
 	"sync"
@@ -55,8 +56,9 @@ type ResponderInterceptor struct {
 	log           logging.LeveledLogger
 	packetFactory packetFactory
 
-	streams   map[uint32]*localStream
-	streamsMu sync.Mutex
+	streams     map[uint32]*localStream
+	streamsMu   sync.Mutex
+	resendMutex *sync.Mutex
 }
 
 type localStream struct {
@@ -85,14 +87,22 @@ func (n *ResponderInterceptor) BindRTCPReader(reader interceptor.RTCPReader) int
 		if err != nil {
 			return 0, nil, err
 		}
-		for _, rtcpPacket := range pkts {
-			nack, ok := rtcpPacket.(*rtcp.TransportLayerNack)
-			if !ok {
-				continue
+		go func() {
+			lastBurstPackets := 0
+			nacksLock, _ := strconv.ParseBool(os.Getenv("HYPERSCALE_NACKS_LOCK"))
+			if nacksLock && n.resendMutex != nil && len(pkts) > 0 {
+				n.resendMutex.Lock()
+				defer n.resendMutex.Unlock()
 			}
 
-			go n.resendPackets(nack)
-		}
+			for _, rtcpPacket := range pkts {
+				nack, ok := rtcpPacket.(*rtcp.TransportLayerNack)
+				if !ok {
+					continue
+				}
+				n.resendPackets(nack, &lastBurstPackets)
+			}
+		}()
 
 		return i, attr, err
 	})
@@ -119,16 +129,33 @@ func (n *ResponderInterceptor) BindLocalStream(info *interceptor.StreamInfo, wri
 		sendBuffer.add(pkt)
 
 		percentage, _ := strconv.ParseFloat(os.Getenv("HYPERSCALE_DROPPED_PACKET_PERCENTAGE"), 64)
-		if percentage > 0 && 100/percentage > 0 &&
-			header.SequenceNumber%(uint16(100/percentage)) == 0 {
-			log.WithFields(
-				log.Fields{
-					"subcomponent":            "interceptor",
-					"sequenceNumber":          header.SequenceNumber,
-					"droppedPacketPercentage": percentage,
-					"type":                    "INTENSIVE",
-				}).Warnf("dropping rtp packet with SN %d intentially..", header.SequenceNumber)
-			return 0, nil
+		if percentage > 0 && percentage <= 100 {
+			drop := false
+			// Switch between 3 modes of packet dropping every 20 second. (periods are 0s-19s, 20s-39s, 40s-59s)
+			mode := int(time.Now().Unix() % 60 / 20)
+			switch mode {
+			case 0:
+				// Drop random percentage of packets
+				drop = float64(rand.Intn(100)+1) <= percentage
+			case 1:
+				// Drop sequencial percentage of packets
+				drop = header.SequenceNumber%100 < uint16(percentage)
+			case 2:
+				// Drop a packet every Nth packet percentage (e.g. 30% will drop every 30th packet)
+				drop = (int(header.SequenceNumber) % int(100/percentage)) == 0
+			}
+
+			if drop {
+				log.WithFields(
+					log.Fields{
+						"subcomponent":            "interceptor",
+						"sequenceNumber":          header.SequenceNumber,
+						"droppedPacketPercentage": percentage,
+						"mode":                    mode,
+						"type":                    "INTENSIVE",
+					}).Warnf("dropping rtp packet with SN %d intentionally..", header.SequenceNumber)
+				return 0, nil
+			}
 		}
 
 		return writer.Write(header, payload, attributes)
@@ -142,7 +169,7 @@ func (n *ResponderInterceptor) UnbindLocalStream(info *interceptor.StreamInfo) {
 	n.streamsMu.Unlock()
 }
 
-func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
+func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, lastBurstPackets *int) {
 	var nacksSpreadDelayMs int
 	var nacksMaxPacketsBurst int
 	var packetsSentWithoutDelay int
@@ -155,10 +182,12 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 	extensionId, idErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_SAMPLE_ATTR_ID")
 	retransmitPos, posErr := getEnvVal("HYPERSCALE_RTP_EXTENSION_RETRANSMIT_ATTR_POS")
 	logNacks := os.Getenv("HYPERSCALE_LOG_NACKED_PACKETS") == "true"
-	nacksSpreadDelayMs, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_SPREAD_PACKETS_DELAY_MS")) // 0 is returned on error, in which case feature will be ignored later on
-	nacksMaxPacketsBurst, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_MAX_PACKET_BURST"))      // 0 is returned on error, in which case feature will be ignored later on
+	nacksSpreadDelayMs, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_SPREAD_PACKET_DELAY_MS")) // 0 is returned on error, in which case feature will be ignored later on
+	nacksMaxPacketsBurst, _ = strconv.Atoi(os.Getenv("HYPERSCALE_NACKS_MAX_PACKET_BURST"))     // 0 is returned on error, in which case feature will be ignored later on
+	dropPercentage, _ := strconv.ParseFloat(os.Getenv("HYPERSCALE_NACKS_DROPPED_PACKET_PERCENTAGE"), 64)
 
-	packetsSentWithoutDelay = 0
+	packetsSentWithoutDelay = *lastBurstPackets
+	pairsCount := len(nack.Nacks)
 	for i := range nack.Nacks {
 		if logNacks {
 			log.WithFields(
@@ -169,7 +198,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 					"mediaSsrc":    nack.MediaSSRC,
 					"lostPackets":  fmt.Sprintf("%d: %b", nack.Nacks[i].PacketID, nack.Nacks[i].LostPackets),
 					"type":         "INTENSIVE",
-				}).Debugf("responsing to nack %v..", nack.Nacks[i])
+				}).Debugf("responsing to nack pair %d/%d..", i+1, pairsCount)
 		}
 		nack.Nacks[i].Range(func(seq uint16) bool {
 			if p := stream.sendBuffer.get(seq); p != nil {
@@ -190,8 +219,17 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 						"payloadType":    p.PayloadType,
 						"ssrc":           p.SSRC,
 						"sequenceNumber": seq,
+						"nackPairIdx":    i,
 						"type":           "INTENSIVE",
 					})
+
+				if dropPercentage > 0 && dropPercentage <= 100 && float64(rand.Intn(100)+1) <= dropPercentage {
+					line.Warnf("dropping rtp nack packet with SN %d intentionally..", seq)
+					packetsSentWithoutDelay++ // From testing spread prespective, count this dropped nack packet as it was re-transmitted
+					*lastBurstPackets = packetsSentWithoutDelay
+					return true
+				}
+
 				if nacksMaxPacketsBurst > 0 && nacksSpreadDelayMs > 0 && packetsSentWithoutDelay >= nacksMaxPacketsBurst {
 					packetsSentWithoutDelay = 0
 					time.Sleep(time.Duration(nacksSpreadDelayMs) * time.Millisecond)
@@ -204,7 +242,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 				} else {
 					packetsSentWithoutDelay++
 					if logNacks {
-						line.Debugf("retransmit rtp packet %d..", seq)
+						line.Debugf("retransmitted rtp packet %d..", seq)
 					}
 				}
 				p.Release()
@@ -218,6 +256,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack) {
 						}).Warnf("failed to get packet with SN %d from internal buffer..", seq)
 				}
 			}
+			*lastBurstPackets = packetsSentWithoutDelay
 			return true
 		})
 	}
