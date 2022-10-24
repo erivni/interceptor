@@ -97,17 +97,17 @@ func TestResponderInterceptorNacksSpreadEnabled(t *testing.T) {
 		ResponderSize(64),
 		ResponderLog(logging.NewDefaultLoggerFactory().NewLogger("test")),
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	i, err := f.NewInterceptor("")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	stream := test.NewMockStream(&interceptor.StreamInfo{
 		SSRC:         1,
 		RTCPFeedback: []interceptor.RTCPFeedback{{Type: "nack"}},
 	}, i)
 	defer func() {
-		assert.NoError(t, stream.Close())
+		require.NoError(t, stream.Close())
 	}()
 
 	manyPackets := []uint16{
@@ -116,11 +116,11 @@ func TestResponderInterceptorNacksSpreadEnabled(t *testing.T) {
 		41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
 		61, 62, 63, 64}
 	for _, seqNum := range manyPackets {
-		assert.NoError(t, stream.WriteRTP(&rtp.Packet{Header: rtp.Header{SequenceNumber: seqNum}}))
+		require.NoError(t, stream.WriteRTP(&rtp.Packet{Header: rtp.Header{SequenceNumber: seqNum}}))
 
 		select {
 		case p := <-stream.WrittenRTP():
-			assert.Equal(t, seqNum, p.SequenceNumber)
+			require.Equal(t, seqNum, p.SequenceNumber)
 		case <-time.After(10 * time.Millisecond):
 			t.Fatal("written rtp packet not found")
 		}
@@ -150,7 +150,7 @@ func TestResponderInterceptorNacksSpreadEnabled(t *testing.T) {
 	for _, seqNum := range manyPackets {
 		select {
 		case p := <-stream.WrittenRTP():
-			assert.Equal(t, seqNum, p.SequenceNumber)
+			require.Equal(t, seqNum, p.SequenceNumber)
 			secsWindow := int(time.Since(timeNacksStart).Seconds())
 			nackWriteTimePhasesSecsCount[secsWindow]++
 		case <-time.After(10000 * time.Millisecond):
@@ -163,13 +163,13 @@ func TestResponderInterceptorNacksSpreadEnabled(t *testing.T) {
 		t.Errorf("no more rtp packets expected, found sequence number: %v", p.SequenceNumber)
 	case <-time.After(1000 * time.Millisecond): // Wait +1s to ensure we don't get any more nack'ed packets
 	}
-	assert.Equal(t, 10, nackWriteTimePhasesSecsCount[0]) // Expect 10 nacks were sent in 0s-1s
-	assert.Equal(t, 10, nackWriteTimePhasesSecsCount[1]) // Expect 10 nacks were sent in 1s-2s
-	assert.Equal(t, 10, nackWriteTimePhasesSecsCount[2]) // Expect 10 nacks were sent in 2s-3s
-	assert.Equal(t, 10, nackWriteTimePhasesSecsCount[3]) // Expect 10 nacks were sent in 3s-4s
-	assert.Equal(t, 10, nackWriteTimePhasesSecsCount[4]) // Expect 10 nacks were sent in 4s-5s
-	assert.Equal(t, 10, nackWriteTimePhasesSecsCount[5]) // Expect 10 nacks were sent in 5s-6s
-	assert.Equal(t, 4, nackWriteTimePhasesSecsCount[6])  // Expect 4 nacks were sent in 6s-7s
+	require.Equal(t, 10, nackWriteTimePhasesSecsCount[0]) // Expect 10 nacks were sent in 0s-1s
+	require.Equal(t, 10, nackWriteTimePhasesSecsCount[1]) // Expect 10 nacks were sent in 1s-2s
+	require.Equal(t, 10, nackWriteTimePhasesSecsCount[2]) // Expect 10 nacks were sent in 2s-3s
+	require.Equal(t, 10, nackWriteTimePhasesSecsCount[3]) // Expect 10 nacks were sent in 3s-4s
+	require.Equal(t, 10, nackWriteTimePhasesSecsCount[4]) // Expect 10 nacks were sent in 4s-5s
+	require.Equal(t, 10, nackWriteTimePhasesSecsCount[5]) // Expect 10 nacks were sent in 5s-6s
+	require.Equal(t, 4, nackWriteTimePhasesSecsCount[6])  // Expect 4 nacks were sent in 6s-7s
 }
 
 func TestResponderInterceptorNacksSpreadDisabled(t *testing.T) {
@@ -177,17 +177,17 @@ func TestResponderInterceptorNacksSpreadDisabled(t *testing.T) {
 		ResponderSize(64),
 		ResponderLog(logging.NewDefaultLoggerFactory().NewLogger("test")),
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	i, err := f.NewInterceptor("")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	stream := test.NewMockStream(&interceptor.StreamInfo{
 		SSRC:         1,
 		RTCPFeedback: []interceptor.RTCPFeedback{{Type: "nack"}},
 	}, i)
 	defer func() {
-		assert.NoError(t, stream.Close())
+		require.NoError(t, stream.Close())
 	}()
 
 	manyPackets := []uint16{
@@ -196,11 +196,11 @@ func TestResponderInterceptorNacksSpreadDisabled(t *testing.T) {
 		41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
 		61, 62, 63, 64}
 	for _, seqNum := range manyPackets {
-		assert.NoError(t, stream.WriteRTP(&rtp.Packet{Header: rtp.Header{SequenceNumber: seqNum}}))
+		require.NoError(t, stream.WriteRTP(&rtp.Packet{Header: rtp.Header{SequenceNumber: seqNum}}))
 
 		select {
 		case p := <-stream.WrittenRTP():
-			assert.Equal(t, seqNum, p.SequenceNumber)
+			require.Equal(t, seqNum, p.SequenceNumber)
 		case <-time.After(10 * time.Millisecond):
 			t.Fatal("written rtp packet not found")
 		}
@@ -228,7 +228,7 @@ func TestResponderInterceptorNacksSpreadDisabled(t *testing.T) {
 	for _, seqNum := range manyPackets {
 		select {
 		case p := <-stream.WrittenRTP():
-			assert.Equal(t, seqNum, p.SequenceNumber)
+			require.Equal(t, seqNum, p.SequenceNumber)
 		case <-time.After(200 * time.Millisecond):
 			t.Fatal("Not all nack'ed packets were written after 200ms")
 		}

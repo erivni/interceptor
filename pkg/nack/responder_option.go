@@ -18,6 +18,7 @@ func ResponderSize(size uint16) ResponderOption {
 	}
 }
 
+// ResponderResendMutex uses an external mutex for locking when retransmitting packets
 func ResponderResendMutex(resendMutex *sync.Mutex) ResponderOption {
 	return func(r *ResponderInterceptor) error {
 		r.resendMutex = resendMutex
@@ -38,6 +39,18 @@ func ResponderLog(log logging.LeveledLogger) ResponderOption {
 func DisableCopy() ResponderOption {
 	return func(s *ResponderInterceptor) error {
 		s.packetFactory = &noOpPacketFactory{}
+		return nil
+	}
+}
+
+
+// ResponderRetransmitStats stats of retransmitted packets
+func ResponderRetransmitStats(retransmittedPacketsCount *uint64, retransmittedPacketsBytes *uint64) ResponderOption {
+	*retransmittedPacketsCount = 0
+	*retransmittedPacketsBytes = 0
+	return func(r *ResponderInterceptor) error {
+		r.retransmittedPacketsCount = retransmittedPacketsCount
+		r.retransmittedPacketsBytes = retransmittedPacketsBytes
 		return nil
 	}
 }

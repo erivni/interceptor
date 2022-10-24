@@ -56,9 +56,11 @@ type ResponderInterceptor struct {
 	log           logging.LeveledLogger
 	packetFactory packetFactory
 
-	streams     map[uint32]*localStream
-	streamsMu   sync.Mutex
-	resendMutex *sync.Mutex
+	streams                   map[uint32]*localStream
+	streamsMu                 sync.Mutex
+	resendMutex               *sync.Mutex
+	retransmittedPacketsCount *uint64
+	retransmittedPacketsBytes *uint64
 }
 
 type localStream struct {
@@ -205,19 +207,19 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 				// setting the retransmit bit in extension
 				if idErr == nil && posErr == nil {
 					var b byte = 1 << retransmitPos
-					ex := p.GetExtension(extensionId)
+					ex := p.header.GetExtension(extensionId)
 					if ex != nil {
 						b |= ex[0]
 					}
-					p.SetExtension(extensionId, []byte{b})
+					p.header.SetExtension(extensionId, []byte{b})
 				}
 
 				line := log.WithFields(
 					log.Fields{
 						"subcomponent":   "interceptor",
 						"action":         "nackRetransmit",
-						"payloadType":    p.PayloadType,
-						"ssrc":           p.SSRC,
+						"payloadType":    p.header.PayloadType,
+						"ssrc":           p.header.SSRC,
 						"sequenceNumber": seq,
 						"nackPairIdx":    i,
 						"type":           "INTENSIVE",
@@ -241,6 +243,10 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 					}
 				} else {
 					packetsSentWithoutDelay++
+					if n.retransmittedPacketsCount != nil && n.retransmittedPacketsBytes != nil {
+						*n.retransmittedPacketsCount++
+						*n.retransmittedPacketsBytes += uint64(len(p.Payload()))
+					}
 					if logNacks {
 						line.Debugf("retransmitted rtp packet %d..", seq)
 					}
