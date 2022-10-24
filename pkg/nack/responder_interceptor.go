@@ -47,9 +47,11 @@ type ResponderInterceptor struct {
 	size uint16
 	log  logging.LeveledLogger
 
-	streams     map[uint32]*localStream
-	streamsMu   sync.Mutex
-	resendMutex *sync.Mutex
+	streams                   map[uint32]*localStream
+	streamsMu                 sync.Mutex
+	resendMutex               *sync.Mutex
+	retransmittedPacketsCount *uint64
+	retransmittedPacketsBytes *uint64
 }
 
 type localStream struct {
@@ -227,6 +229,10 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 					}
 				} else {
 					packetsSentWithoutDelay++
+					if n.retransmittedPacketsCount != nil && n.retransmittedPacketsBytes != nil {
+						*n.retransmittedPacketsCount++
+						*n.retransmittedPacketsBytes += uint64(len(p.Payload))
+					}
 					if logNacks {
 						line.Debugf("retransmitted rtp packet %d..", seq)
 					}
