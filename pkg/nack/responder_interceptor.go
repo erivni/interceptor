@@ -91,7 +91,12 @@ func (n *ResponderInterceptor) BindRTCPReader(reader interceptor.RTCPReader) int
 			for _, rtcpPacket := range pkts {
 				nack, ok := rtcpPacket.(*rtcp.TransportLayerNack)
 				if !ok {
-					continue
+					fir, ok := rtcpPacket.(*rtcp.FullIntraRequest)
+					if !ok {
+						continue
+					}
+					stream := n.streams[fir.MediaSSRC]
+					stream.sendBuffer, _ = newSendBuffer(n.size)
 				}
 				n.resendPackets(nack, &lastBurstPackets)
 			}
