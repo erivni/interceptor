@@ -34,7 +34,7 @@ func (h *HeaderExtensionInterceptor) BindLocalStream(info *interceptor.StreamInf
 	var hdrExtID uint8
 	for _, e := range info.RTPHeaderExtensions {
 		if e.URI == transportCCURI {
-			hdrExtID = uint8(e.ID)
+			hdrExtID = 12 //uint8(e.ID)
 			break
 		}
 	}
