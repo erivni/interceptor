@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+// SPDX-License-Identifier: MIT
+
 package packetdump
 
 import (
@@ -19,7 +22,7 @@ func NewSenderInterceptor(opts ...PacketDumperOption) (*SenderInterceptorFactory
 }
 
 // NewInterceptor returns a new SenderInterceptor interceptor
-func (s *SenderInterceptorFactory) NewInterceptor(id string) (interceptor.Interceptor, error) {
+func (s *SenderInterceptorFactory) NewInterceptor(_ string) (interceptor.Interceptor, error) {
 	dumper, err := NewPacketDumper(s.opts...)
 	if err != nil {
 		return nil, err
@@ -47,7 +50,7 @@ func (s *SenderInterceptor) BindRTCPWriter(writer interceptor.RTCPWriter) interc
 
 // BindLocalStream lets you modify any outgoing RTP packets. It is called once for per LocalStream. The returned method
 // will be called once per rtp packet.
-func (s *SenderInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
+func (s *SenderInterceptor) BindLocalStream(_ *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
 	return interceptor.RTPWriterFunc(func(header *rtp.Header, payload []byte, attributes interceptor.Attributes) (int, error) {
 		s.logRTPPacket(header, payload, attributes)
 		return writer.Write(header, payload, attributes)

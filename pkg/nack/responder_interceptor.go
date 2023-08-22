@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+// SPDX-License-Identifier: MIT
+
 package nack
 
 import (
@@ -20,10 +23,14 @@ type ResponderInterceptorFactory struct {
 	opts []ResponderOption
 }
 
+type packetFactory interface {
+	NewPacket(header *rtp.Header, payload []byte) (*retainablePacket, error)
+}
+
 // NewInterceptor constructs a new ResponderInterceptor
-func (r *ResponderInterceptorFactory) NewInterceptor(id string) (interceptor.Interceptor, error) {
+func (r *ResponderInterceptorFactory) NewInterceptor(_ string) (interceptor.Interceptor, error) {
 	i := &ResponderInterceptor{
-		size:    8192,
+		size:    1024,
 		log:     logging.NewDefaultLoggerFactory().NewLogger("nack_responder"),
 		streams: map[uint32]*localStream{},
 	}
@@ -32,6 +39,10 @@ func (r *ResponderInterceptorFactory) NewInterceptor(id string) (interceptor.Int
 		if err := opt(i); err != nil {
 			return nil, err
 		}
+	}
+
+	if i.packetFactory == nil {
+		i.packetFactory = newPacketManager()
 	}
 
 	if _, err := newSendBuffer(i.size); err != nil {
@@ -44,8 +55,9 @@ func (r *ResponderInterceptorFactory) NewInterceptor(id string) (interceptor.Int
 // ResponderInterceptor responds to nack feedback messages
 type ResponderInterceptor struct {
 	interceptor.NoOp
-	size uint16
-	log  logging.LeveledLogger
+	size          uint16
+	log           logging.LeveledLogger
+	packetFactory packetFactory
 
 	streams                   map[uint32]*localStream
 	streamsMu                 sync.Mutex
@@ -115,7 +127,11 @@ func (n *ResponderInterceptor) BindLocalStream(info *interceptor.StreamInfo, wri
 	n.streamsMu.Unlock()
 
 	return interceptor.RTPWriterFunc(func(header *rtp.Header, payload []byte, attributes interceptor.Attributes) (int, error) {
-		sendBuffer.add(&rtp.Packet{Header: *header, Payload: payload})
+		pkt, err := n.packetFactory.NewPacket(header, payload)
+		if err != nil {
+			return 0, err
+		}
+		sendBuffer.add(pkt)
 		percentage, _ := strconv.ParseFloat(os.Getenv("HYPERSCALE_DROPPED_PACKET_PERCENTAGE"), 64)
 		if percentage > 0 && percentage <= 100 {
 			drop := false
@@ -236,6 +252,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 					if logNacks {
 						line.Debugf("retransmitted rtp packet %d..", seq)
 					}
+					p.Release()
 				}
 			} else {
 				if os.Getenv("HYPERSCALE_WARN_ON_MISSING_NACKED_PACKETS") == "true" {

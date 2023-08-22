@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+// SPDX-License-Identifier: MIT
+
 package nack
 
 import (
@@ -41,6 +44,15 @@ func ResponderRetransmitStats(retransmittedPacketsCount *uint64, retransmittedPa
 	return func(r *ResponderInterceptor) error {
 		r.retransmittedPacketsCount = retransmittedPacketsCount
 		r.retransmittedPacketsBytes = retransmittedPacketsBytes
+		return nil
+	}
+}
+
+// DisableCopy bypasses copy of underlying packets. It should be used when
+// you are not re-using underlying buffers of packets that have been written
+func DisableCopy() ResponderOption {
+	return func(s *ResponderInterceptor) error {
+		s.packetFactory = &noOpPacketFactory{}
 		return nil
 	}
 }

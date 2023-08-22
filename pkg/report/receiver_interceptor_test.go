@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+// SPDX-License-Identifier: MIT
+
 package report
 
 import (
@@ -5,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pion/interceptor"
+	"github.com/pion/interceptor/internal/ntp"
 	"github.com/pion/interceptor/internal/test"
 	"github.com/pion/logging"
 	"github.com/pion/rtcp"
@@ -123,7 +127,7 @@ func TestReceiverInterceptor(t *testing.T) {
 		stream.ReceiveRTCP([]rtcp.Packet{
 			&rtcp.SenderReport{
 				SSRC:        123456,
-				NTPTime:     ntpTime(now),
+				NTPTime:     ntp.ToNTP(now),
 				RTPTime:     987654321 + uint32(now.Sub(rtpTime).Seconds()*90000),
 				PacketCount: 10,
 				OctetCount:  0,
@@ -181,7 +185,7 @@ func TestReceiverInterceptor(t *testing.T) {
 		assert.Equal(t, 1, len(rr.Reports))
 		assert.Equal(t, rtcp.ReceptionReport{
 			SSRC:               uint32(123456),
-			LastSequenceNumber: 1<<16 | 0x0000,
+			LastSequenceNumber: 1 << 16,
 			LastSenderReport:   0,
 			FractionLost:       0,
 			TotalLost:          0,
@@ -237,7 +241,7 @@ func TestReceiverInterceptor(t *testing.T) {
 		stream.ReceiveRTCP([]rtcp.Packet{
 			&rtcp.SenderReport{
 				SSRC:        123456,
-				NTPTime:     ntpTime(now),
+				NTPTime:     ntp.ToNTP(now),
 				RTPTime:     987654321 + uint32(now.Sub(rtpTime).Seconds()*90000),
 				PacketCount: 10,
 				OctetCount:  0,
@@ -419,7 +423,7 @@ func TestReceiverInterceptor(t *testing.T) {
 		stream.ReceiveRTCP([]rtcp.Packet{
 			&rtcp.SenderReport{
 				SSRC:        123456,
-				NTPTime:     ntpTime(time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC)),
+				NTPTime:     ntp.ToNTP(time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC)),
 				RTPTime:     987654321,
 				PacketCount: 0,
 				OctetCount:  0,

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+// SPDX-License-Identifier: MIT
+
+// Package demonstrates how to use the NACK interceptor
 package main
 
 import (
@@ -112,7 +116,7 @@ func sendRoutine() {
 
 	// Set the interceptor wide RTCP Reader
 	// this is a handle to send NACKs back into the interceptor.
-	rtcpWriter := chain.BindRTCPReader(interceptor.RTCPReaderFunc(func(in []byte, _ interceptor.Attributes) (int, interceptor.Attributes, error) {
+	rtcpReader := chain.BindRTCPReader(interceptor.RTCPReaderFunc(func(in []byte, _ interceptor.Attributes) (int, interceptor.Attributes, error) {
 		return len(in), nil, nil
 	}))
 
@@ -140,7 +144,7 @@ func sendRoutine() {
 
 			log.Println("Received NACK")
 
-			if _, _, err = rtcpWriter.Read(rtcpBuf[:i], nil); err != nil {
+			if _, _, err = rtcpReader.Read(rtcpBuf[:i], nil); err != nil {
 				panic(err)
 			}
 		}

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+// SPDX-License-Identifier: MIT
+
 package twcc
 
 import (
@@ -8,6 +11,7 @@ import (
 	"github.com/pion/interceptor/internal/test"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	transportTest "github.com/pion/transport/v2/test"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,17 +33,12 @@ func TestSenderInterceptor(t *testing.T) {
 			assert.NoError(t, stream.Close())
 		}()
 
-		pkts := <-stream.WrittenRTCP()
-		assert.Equal(t, 1, len(pkts))
-		tlcc, ok := pkts[0].(*rtcp.TransportLayerCC)
-		assert.True(t, ok)
-		assert.Equal(t, uint16(0), tlcc.PacketStatusCount)
-		assert.Equal(t, uint8(0), tlcc.FbPktCount)
-		assert.Equal(t, uint16(0), tlcc.BaseSequenceNumber)
-		assert.Equal(t, uint32(0), tlcc.MediaSSRC)
-		assert.Equal(t, uint32(0), tlcc.ReferenceTime)
-		assert.Equal(t, 0, len(tlcc.RecvDeltas))
-		assert.Equal(t, 0, len(tlcc.PacketChunks))
+		var pkts []rtcp.Packet
+		select {
+		case pkts = <-stream.WrittenRTCP():
+		case <-time.After(300 * time.Millisecond): // wait longer than default interval
+		}
+		assert.Equal(t, 0, len(pkts))
 	})
 
 	t.Run("after RTP packets", func(t *testing.T) {
@@ -269,4 +268,38 @@ func TestSenderInterceptor(t *testing.T) {
 			},
 		}, cc.PacketChunks)
 	})
+}
+
+func TestSenderInterceptor_Leak(t *testing.T) {
+	lim := transportTest.TimeOut(time.Second * 10)
+	defer lim.Stop()
+
+	report := transportTest.CheckRoutines(t)
+	defer report()
+
+	f, err := NewSenderInterceptor(SendInterval(200 * time.Millisecond))
+	assert.NoError(t, err)
+
+	i, err := f.NewInterceptor("")
+	assert.NoError(t, err)
+
+	stream := test.NewMockStream(&interceptor.StreamInfo{RTPHeaderExtensions: []interceptor.RTPHeaderExtension{
+		{
+			URI: transportCCURI,
+			ID:  1,
+		},
+	}}, i)
+	defer func() {
+		assert.NoError(t, stream.Close())
+	}()
+
+	assert.NoError(t, i.Close())
+	for _, i := range []int{0, 1, 2, 3, 4, 5} {
+		hdr := rtp.Header{}
+		tcc, err := (&rtp.TransportCCExtension{TransportSequence: uint16(i)}).Marshal()
+		assert.NoError(t, err)
+
+		assert.NoError(t, hdr.SetExtension(1, tcc))
+		stream.ReceiveRTP(&rtp.Packet{Header: hdr})
+	}
 }
