@@ -209,18 +209,18 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 				// setting the retransmit bit in extension
 				if idErr == nil && posErr == nil {
 					var b byte = 1 << retransmitPos
-					ex := p.GetExtension(extensionId)
+					ex := p.Header().GetExtension(extensionId)
 					if ex != nil {
 						b |= ex[0]
 					}
-					p.SetExtension(extensionId, []byte{b})
+					p.Header().SetExtension(extensionId, []byte{b})
 				}
 				line := log.WithFields(
 					log.Fields{
 						"subcomponent":   "interceptor",
 						"action":         "nackRetransmit",
-						"payloadType":    p.PayloadType,
-						"ssrc":           p.SSRC,
+						"payloadType":    p.Header().PayloadType,
+						"ssrc":           p.Header().SSRC,
 						"sequenceNumber": seq,
 						"nackPairIdx":    i,
 						"type":           "INTENSIVE",
@@ -237,8 +237,8 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 					packetsSentWithoutDelay = 0
 					time.Sleep(time.Duration(nacksSpreadDelayMs) * time.Millisecond)
 				}
-
-				if _, err := stream.rtpWriter.Write(&p.Header, p.Payload, interceptor.Attributes{}); err != nil {
+				payload := p.Payload()
+				if _, err := stream.rtpWriter.Write(p.Header(), p.Payload(), interceptor.Attributes{}); err != nil {
 					n.log.Warnf("failed resending nacked packet: %+v", err)
 					if logNacks {
 						line.Errorf("failed to retransmit rtp packet %d.", seq)
@@ -247,7 +247,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 					packetsSentWithoutDelay++
 					if n.retransmittedPacketsCount != nil && n.retransmittedPacketsBytes != nil {
 						*n.retransmittedPacketsCount++
-						*n.retransmittedPacketsBytes += uint64(len(p.Payload))
+						*n.retransmittedPacketsBytes += uint64(len(payload))
 					}
 					if logNacks {
 						line.Debugf("retransmitted rtp packet %d..", seq)
