@@ -246,8 +246,10 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 				} else {
 					packetsSentWithoutDelay++
 					if n.retransmittedPacketsCount != nil && n.retransmittedPacketsBytes != nil {
+						payload := p.Payload()
 						*n.retransmittedPacketsCount++
-						*n.retransmittedPacketsBytes += uint64(p.MarshalSize()) + 8 // +8 for underlying UDP header size
+						*n.retransmittedPacketsBytes += uint64(len(payload)+p.Header().MarshalSize()) + 8 // +8 for underlying UDP header size
+
 					}
 					if logNacks {
 						line.Debugf("retransmitted rtp packet %d..", seq)
