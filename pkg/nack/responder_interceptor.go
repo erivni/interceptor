@@ -237,7 +237,7 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 					packetsSentWithoutDelay = 0
 					time.Sleep(time.Duration(nacksSpreadDelayMs) * time.Millisecond)
 				}
-				payload := p.Payload()
+
 				if _, err := stream.rtpWriter.Write(p.Header(), p.Payload(), interceptor.Attributes{}); err != nil {
 					n.log.Warnf("failed resending nacked packet: %+v", err)
 					if logNacks {
@@ -246,8 +246,10 @@ func (n *ResponderInterceptor) resendPackets(nack *rtcp.TransportLayerNack, last
 				} else {
 					packetsSentWithoutDelay++
 					if n.retransmittedPacketsCount != nil && n.retransmittedPacketsBytes != nil {
+						payload := p.Payload()
 						*n.retransmittedPacketsCount++
-						*n.retransmittedPacketsBytes += uint64(len(payload))
+						*n.retransmittedPacketsBytes += uint64(len(payload)+p.Header().MarshalSize()) + 8 // +8 for underlying UDP header size
+
 					}
 					if logNacks {
 						line.Debugf("retransmitted rtp packet %d..", seq)
