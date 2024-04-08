@@ -136,7 +136,11 @@ func (n *ResponderInterceptor) BindLocalStream(info *interceptor.StreamInfo, wri
 		if percentage > 0 && percentage <= 100 {
 			drop := false
 			// Switch between 3 modes of packet dropping every 20 second. (periods are 0s-19s, 20s-39s, 40s-59s)
+			// The mode can also be set specifically as well
 			mode := int(time.Now().Unix() % 60 / 20)
+			if modeOverride, err := strconv.ParseInt(os.Getenv("HYPERSCALE_DROPPED_PACKET_PERCENTAGE_MODE"), 10, 8); err == nil && modeOverride >= 0 && modeOverride < 3 {
+				mode = int(modeOverride)
+			}
 			switch mode {
 			case 0:
 				// Drop random percentage of packets
