@@ -59,6 +59,7 @@ type GeneratorInterceptor struct {
 
 	receiveLogs   map[uint32]*receiveLog
 	receiveLogsMu sync.Mutex
+	nacketPackets func([]uint16)
 }
 
 // NewGeneratorInterceptor returns a new GeneratorInterceptorFactory

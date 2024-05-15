@@ -7,5 +7,6 @@ require (
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.8.2
 	github.com/pion/transport/v3 v3.0.1
+	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.8.4
 )
