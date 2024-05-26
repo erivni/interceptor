@@ -36,7 +36,7 @@ type FeedbackAdapter struct {
 
 // NewFeedbackAdapter returns a new FeedbackAdapter
 func NewFeedbackAdapter() *FeedbackAdapter {
-	return &FeedbackAdapter{history: newFeedbackHistory(250), log: logging.NewDefaultLoggerFactory().NewLogger("gcc_feedback_adapter")}
+	return &FeedbackAdapter{history: newFeedbackHistory(4000), log: logging.NewDefaultLoggerFactory().NewLogger("gcc_feedback_adapter")}
 }
 
 func (f *FeedbackAdapter) onSentRFC8888(ts time.Time, header *rtp.Header, size int) error {
