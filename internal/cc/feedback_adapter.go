@@ -11,6 +11,7 @@ import (
 
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/internal/ntp"
+	"github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 )
@@ -29,11 +30,12 @@ var (
 type FeedbackAdapter struct {
 	lock    sync.Mutex
 	history *feedbackHistory
+	log     logging.LeveledLogger
 }
 
 // NewFeedbackAdapter returns a new FeedbackAdapter
 func NewFeedbackAdapter() *FeedbackAdapter {
-	return &FeedbackAdapter{history: newFeedbackHistory(250)}
+	return &FeedbackAdapter{history: newFeedbackHistory(250), log: logging.NewDefaultLoggerFactory().NewLogger("gcc_feedback_adapter")}
 }
 
 func (f *FeedbackAdapter) onSentRFC8888(ts time.Time, header *rtp.Header, size int) error {
@@ -147,6 +149,8 @@ func (f *FeedbackAdapter) OnTransportCCFeedback(_ time.Time, feedback *rtcp.Tran
 	index := feedback.BaseSequenceNumber
 	refTime := time.Time{}.Add(time.Duration(feedback.ReferenceTime) * 64 * time.Millisecond)
 	recvDeltas := feedback.RecvDeltas
+
+	f.log.Infof("TWCC Feedback Report: %s", feedback.String())
 
 	for _, chunk := range feedback.PacketChunks {
 		switch chunk := chunk.(type) {
