@@ -6,6 +6,7 @@ package cc
 import (
 	"container/list"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -139,6 +140,26 @@ func (f *FeedbackAdapter) unpackStatusVectorChunk(start uint16, refTime time.Tim
 	return deltaIndex, refTime, result, nil
 }
 
+func TWCCPacket_String(feedback *rtcp.TransportLayerCC) string {
+	out := fmt.Sprintf("TransportLayerCC:\tHeader %v", feedback.Header)
+	out += fmt.Sprintf("TransportLayerCC:\tSender Ssrc %d", feedback.SenderSSRC)
+	out += fmt.Sprintf("\tMedia Ssrc %d", feedback.MediaSSRC)
+	out += fmt.Sprintf("\tBase Sequence Number %d", feedback.BaseSequenceNumber)
+	out += fmt.Sprintf("\tStatus Count %d", feedback.PacketStatusCount)
+	out += fmt.Sprintf("\tReference Time %d", feedback.ReferenceTime)
+	out += fmt.Sprintf("\tFeedback Packet Count %d", feedback.FbPktCount)
+	out += "\tPacketChunks "
+	for _, chunk := range feedback.PacketChunks {
+		out += fmt.Sprintf("%+v ", chunk)
+	}
+	out += "\tRecvDeltas "
+	for _, delta := range feedback.RecvDeltas {
+		out += fmt.Sprintf("%+v ", delta)
+	}
+	out += ""
+	return out
+}
+
 // OnTransportCCFeedback converts incoming TWCC RTCP packet feedback to
 // Acknowledgments.
 func (f *FeedbackAdapter) OnTransportCCFeedback(_ time.Time, feedback *rtcp.TransportLayerCC) ([]Acknowledgment, error) {
@@ -150,7 +171,7 @@ func (f *FeedbackAdapter) OnTransportCCFeedback(_ time.Time, feedback *rtcp.Tran
 	refTime := time.Time{}.Add(time.Duration(feedback.ReferenceTime) * 64 * time.Millisecond)
 	recvDeltas := feedback.RecvDeltas
 
-	f.log.Infof("TWCC Feedback Report: %s", feedback.String())
+	f.log.Infof("TWCC Feedback Report: %s", TWCCPacket_String(feedback))
 
 	for _, chunk := range feedback.PacketChunks {
 		switch chunk := chunk.(type) {
