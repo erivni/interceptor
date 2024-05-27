@@ -96,7 +96,7 @@ func SendSideBWEPacer(p Pacer) Option {
 }
 
 // SendSideBWELossBasedOptions sets the different configuration values for the loss based algorithm
-func SendSideBWELossBasedOptions(options *lossBasedBandwidthEstimatorOptions) Option {
+func SendSideBWELossBasedOptions(options *LossBasedBandwidthEstimatorOptions) Option {
 	return func(e *SendSideBWE) error {
 		e.lossControllerOptions = options
 		return nil
