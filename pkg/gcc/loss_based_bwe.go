@@ -5,8 +5,6 @@ package gcc
 
 import (
 	"math"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -14,15 +12,17 @@ import (
 	"github.com/pion/logging"
 )
 
+var (
+	// constants from
+	// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
 
-// constants from
-// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
-var increaseLossThreshold = 0.02
-var increaseTimeThreshold = 200 * time.Millisecond
-var increaseFactor        = 1.05
-var decreaseLossThreshold = 0.1
-var decreaseTimeThreshold = 200 * time.Millisecond
+	increaseLossThreshold = 0.02
+	increaseTimeThreshold = 200 * time.Millisecond
+	increaseFactor        = 1.05
 
+	decreaseLossThreshold = 0.1
+	decreaseTimeThreshold = 200 * time.Millisecond
+)
 
 // LossStats contains internal statistics of the loss based controller
 type LossStats struct {
@@ -42,24 +42,36 @@ type lossBasedBandwidthEstimator struct {
 	log            logging.LeveledLogger
 }
 
-func newLossBasedBWE(initialBitrate int) *lossBasedBandwidthEstimator {
-	if envIncreaseLossThreshold, err := strconv.ParseFloat(os.Getenv("HYPERSCALE_GCC_INCREASE_LOSS_THRESHOLD"), 64); err == nil {
-		increaseLossThreshold = envIncreaseLossThreshold
+type lossBasedBWEOption func(*lossBasedBandwidthEstimator)
+
+func IncreaseLossThreshold(t float64) lossBasedBWEOption {
+	return func(o *lossBasedBandwidthEstimator) {
+		increaseLossThreshold = t
 	}
-	if envIncreaseTimeThreshold, err := strconv.Atoi(os.Getenv("HYPERSCALE_GCC_INCREASE_TIME_THRESHOLD")) ; err == nil {
-		increaseTimeThreshold = (time.Duration(envIncreaseTimeThreshold) * time.Millisecond)
+}
+func IncreaseTimeThreshold(t time.Duration) lossBasedBWEOption {
+	return func(o *lossBasedBandwidthEstimator) {
+		increaseTimeThreshold = t
 	}
-	if envIncreaseFactor, err := strconv.ParseFloat(os.Getenv("HYPERSCALE_GCC_INCREASE_FACTOR"), 64); err == nil {
-		increaseFactor = envIncreaseFactor
+}
+func IncreaseFactor(t float64) lossBasedBWEOption {
+	return func(o *lossBasedBandwidthEstimator) {
+		increaseFactor = t
 	}
-	if envDecreaseLossThreshold, err := strconv.ParseFloat(os.Getenv("HYPERSCALE_GCC_DECREASE_LOSS_THRESHOLD"), 64); err == nil {
-		decreaseLossThreshold = envDecreaseLossThreshold
+}
+func DecreaseLossThreshold(t float64) lossBasedBWEOption {
+	return func(o *lossBasedBandwidthEstimator) {
+		decreaseLossThreshold = t
 	}
-	if envDecreaseTimeThreshold, err := strconv.Atoi(os.Getenv("HYPERSCALE_GCC_DECREASE_TIME_THRESHOLD")) ; err == nil {
-		decreaseTimeThreshold = (time.Duration(envDecreaseTimeThreshold) * time.Millisecond)
+}
+func DecreaseTimeThreshold(t time.Duration) lossBasedBWEOption {
+	return func(o *lossBasedBandwidthEstimator) {
+		decreaseTimeThreshold = t
 	}
-	
-	return &lossBasedBandwidthEstimator{
+}
+
+func newLossBasedBWE(initialBitrate int, opts ...lossBasedBWEOption) *lossBasedBandwidthEstimator {
+	l := &lossBasedBandwidthEstimator{
 		lock:           sync.Mutex{},
 		maxBitrate:     100_000_000, // 100 mbit
 		minBitrate:     100_000,     // 100 kbit
@@ -70,6 +82,11 @@ func newLossBasedBWE(initialBitrate int) *lossBasedBandwidthEstimator {
 		lastDecrease:   time.Time{},
 		log:            logging.NewDefaultLoggerFactory().NewLogger("gcc_loss_controller"),
 	}
+	for _, opt := range opts {
+		opt(l)
+	}
+	return l
+
 }
 
 func (e *lossBasedBandwidthEstimator) getEstimate(wantedRate int) LossStats {
