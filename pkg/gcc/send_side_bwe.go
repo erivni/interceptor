@@ -42,10 +42,11 @@ type Stats struct {
 
 // SendSideBWE implements a combination of loss and delay based GCC
 type SendSideBWE struct {
-	pacer           Pacer
-	lossController  *lossBasedBandwidthEstimator
-	delayController *delayController
-	feedbackAdapter *cc.FeedbackAdapter
+	pacer                 Pacer
+	lossController        *lossBasedBandwidthEstimator
+	lossControllerOptions *LossBasedBandwidthEstimatorOptions
+	delayController       *delayController
+	feedbackAdapter       *cc.FeedbackAdapter
 
 	onTargetBitrateChange func(bitrate int)
 
@@ -94,11 +95,20 @@ func SendSideBWEPacer(p Pacer) Option {
 	}
 }
 
+// SendSideBWELossBasedOptions sets the different configuration values for the loss based algorithm
+func SendSideBWELossBasedOptions(options *LossBasedBandwidthEstimatorOptions) Option {
+	return func(e *SendSideBWE) error {
+		e.lossControllerOptions = options
+		return nil
+	}
+}
+
 // NewSendSideBWE creates a new sender side bandwidth estimator
 func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 	e := &SendSideBWE{
 		pacer:                 nil,
 		lossController:        nil,
+		lossControllerOptions: nil,
 		delayController:       nil,
 		feedbackAdapter:       cc.NewFeedbackAdapter(),
 		onTargetBitrateChange: nil,
@@ -117,7 +127,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 	if e.pacer == nil {
 		e.pacer = NewLeakyBucketPacer(e.latestBitrate)
 	}
-	e.lossController = newLossBasedBWE(e.latestBitrate)
+	e.lossController = newLossBasedBWE(e.latestBitrate, e.lossControllerOptions)
 	e.delayController = newDelayController(delayControllerConfig{
 		nowFn:          time.Now,
 		initialBitrate: e.latestBitrate,

@@ -12,18 +12,6 @@ import (
 	"github.com/pion/logging"
 )
 
-const (
-	// constants from
-	// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
-
-	increaseLossThreshold = 0.02
-	increaseTimeThreshold = 200 * time.Millisecond
-	increaseFactor        = 1.05
-
-	decreaseLossThreshold = 0.1
-	decreaseTimeThreshold = 200 * time.Millisecond
-)
-
 // LossStats contains internal statistics of the loss based controller
 type LossStats struct {
 	TargetBitrate int
@@ -39,10 +27,32 @@ type lossBasedBandwidthEstimator struct {
 	lastLossUpdate time.Time
 	lastIncrease   time.Time
 	lastDecrease   time.Time
+	options        LossBasedBandwidthEstimatorOptions
 	log            logging.LeveledLogger
 }
 
-func newLossBasedBWE(initialBitrate int) *lossBasedBandwidthEstimator {
+type LossBasedBandwidthEstimatorOptions struct {
+	IncreaseLossThreshold float64
+	IncreaseTimeThreshold time.Duration
+	IncreaseFactor        float64
+	DecreaseLossThreshold float64
+	DecreaseTimeThreshold time.Duration
+}
+
+func newLossBasedBWE(initialBitrate int, options *LossBasedBandwidthEstimatorOptions) *lossBasedBandwidthEstimator {
+	if options == nil {
+		// constants from
+		// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
+		defaultOptions := LossBasedBandwidthEstimatorOptions{
+			IncreaseLossThreshold: 0.02,     
+			IncreaseTimeThreshold: 200 * time.Millisecond,
+			IncreaseFactor:        1.05,
+			DecreaseLossThreshold: 0.1,        
+			DecreaseTimeThreshold: 200 * time.Millisecond,
+		}
+		options = &defaultOptions
+	}
+
 	return &lossBasedBandwidthEstimator{
 		lock:           sync.Mutex{},
 		maxBitrate:     100_000_000, // 100 mbit
@@ -52,6 +62,7 @@ func newLossBasedBWE(initialBitrate int) *lossBasedBandwidthEstimator {
 		lastLossUpdate: time.Time{},
 		lastIncrease:   time.Time{},
 		lastDecrease:   time.Time{},
+		options:        *options,
 		log:            logging.NewDefaultLoggerFactory().NewLogger("gcc_loss_controller"),
 	}
 }
@@ -93,11 +104,11 @@ func (e *lossBasedBandwidthEstimator) updateLossEstimate(results []cc.Acknowledg
 	increaseLoss := math.Max(e.averageLoss, lossRatio)
 	decreaseLoss := math.Min(e.averageLoss, lossRatio)
 
-	if increaseLoss < increaseLossThreshold && time.Since(e.lastIncrease) > increaseTimeThreshold {
+	if increaseLoss < e.options.IncreaseLossThreshold && time.Since(e.lastIncrease) > e.options.IncreaseTimeThreshold {
 		e.log.Infof("loss controller increasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
 		e.lastIncrease = time.Now()
-		e.bitrate = clampInt(int(increaseFactor*float64(e.bitrate)), e.minBitrate, e.maxBitrate)
-	} else if decreaseLoss > decreaseLossThreshold && time.Since(e.lastDecrease) > decreaseTimeThreshold {
+		e.bitrate = clampInt(int(e.options.IncreaseFactor*float64(e.bitrate)), e.minBitrate, e.maxBitrate)
+	} else if decreaseLoss > e.options.DecreaseLossThreshold && time.Since(e.lastDecrease) > e.options.DecreaseTimeThreshold {
 		e.log.Infof("loss controller decreasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
 		e.lastDecrease = time.Now()
 		e.bitrate = clampInt(int(float64(e.bitrate)*(1-0.5*decreaseLoss)), e.minBitrate, e.maxBitrate)
