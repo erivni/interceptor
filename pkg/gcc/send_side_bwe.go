@@ -44,7 +44,7 @@ type Stats struct {
 type SendSideBWE struct {
 	pacer                 Pacer
 	lossController        *lossBasedBandwidthEstimator
-	lossControllerOptions *lossBasedBandwidthEstimatorOptions
+	lossControllerOptions *LossBasedBandwidthEstimatorOptions
 	delayController       *delayController
 	feedbackAdapter       *cc.FeedbackAdapter
 
