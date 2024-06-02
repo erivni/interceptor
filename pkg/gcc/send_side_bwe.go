@@ -234,14 +234,14 @@ func (e *SendSideBWE) GetStats() map[string]interface{} {
 	defer e.lock.Unlock()
 
 	return map[string]interface{}{
-		"lossTargetBitrate":  e.latestStats.LossStats.TargetBitrate,
-		"averageLoss":        e.latestStats.AverageLoss,
-		"delayTargetBitrate": e.latestStats.DelayStats.TargetBitrate,
-		"delayMeasurement":   float64(e.latestStats.Measurement.Microseconds()) / 1000.0,
-		"delayEstimate":      float64(e.latestStats.Estimate.Microseconds()) / 1000.0,
-		"delayThreshold":     float64(e.latestStats.Threshold.Microseconds()) / 1000.0,
-		"usage":              e.latestStats.Usage.String(),
-		"state":              e.latestStats.State.String(),
+		"GccLossTargetBitrate":  e.latestStats.LossStats.TargetBitrate,
+		"GccAverageLoss":        e.latestStats.AverageLoss,
+		"GccDelayTargetBitrate": e.latestStats.DelayStats.TargetBitrate,
+		"GccDelayMeasurement":   float64(e.latestStats.Measurement.Microseconds()) / 1000.0,
+		"GccDelayEstimate":      float64(e.latestStats.Estimate.Microseconds()) / 1000.0,
+		"GccDelayThreshold":     float64(e.latestStats.Threshold.Microseconds()) / 1000.0,
+		"GccUsage":              e.latestStats.Usage.String(),
+		"GccState":              e.latestStats.State.String(),
 	}
 }
 
