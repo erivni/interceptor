@@ -56,6 +56,9 @@ type SendSideBWE struct {
 	minBitrate    int
 	maxBitrate    int
 
+	overuseTime                   int
+	disableMeasurementUncertainty bool
+
 	close     chan struct{}
 	closeLock sync.RWMutex
 }
@@ -103,21 +106,32 @@ func SendSideBWELossBasedOptions(options *LossBasedBandwidthEstimatorOptions) Op
 	}
 }
 
+// SendSideBWELossBasedOptions sets the different configuration values for the loss based algorithm
+func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool) Option {
+	return func(e *SendSideBWE) error {
+		e.overuseTime = overuseTime
+		e.disableMeasurementUncertainty = disableMeasurementUncertainty
+		return nil
+	}
+}
+
 // NewSendSideBWE creates a new sender side bandwidth estimator
 func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 	e := &SendSideBWE{
-		pacer:                 nil,
-		lossController:        nil,
-		lossControllerOptions: nil,
-		delayController:       nil,
-		feedbackAdapter:       cc.NewFeedbackAdapter(),
-		onTargetBitrateChange: nil,
-		lock:                  sync.Mutex{},
-		latestStats:           Stats{},
-		latestBitrate:         latestBitrate,
-		minBitrate:            minBitrate,
-		maxBitrate:            maxBitrate,
-		close:                 make(chan struct{}),
+		pacer:                         nil,
+		lossController:                nil,
+		lossControllerOptions:         nil,
+		delayController:               nil,
+		feedbackAdapter:               cc.NewFeedbackAdapter(),
+		onTargetBitrateChange:         nil,
+		lock:                          sync.Mutex{},
+		latestStats:                   Stats{},
+		latestBitrate:                 latestBitrate,
+		minBitrate:                    minBitrate,
+		maxBitrate:                    maxBitrate,
+		overuseTime:                   10,
+		disableMeasurementUncertainty: false,
+		close:                         make(chan struct{}),
 	}
 	for _, opt := range opts {
 		if err := opt(e); err != nil {
@@ -129,10 +143,12 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 	}
 	e.lossController = newLossBasedBWE(e.latestBitrate, e.lossControllerOptions)
 	e.delayController = newDelayController(delayControllerConfig{
-		nowFn:          time.Now,
-		initialBitrate: e.latestBitrate,
-		minBitrate:     e.minBitrate,
-		maxBitrate:     e.maxBitrate,
+		nowFn:                         time.Now,
+		initialBitrate:                e.latestBitrate,
+		minBitrate:                    e.minBitrate,
+		maxBitrate:                    e.maxBitrate,
+		overuseTime:                   e.overuseTime,
+		disableMeasurementUncertainty: e.disableMeasurementUncertainty,
 	})
 
 	e.delayController.onUpdate(e.onDelayUpdate)
