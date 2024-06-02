@@ -47,6 +47,7 @@ type delayControllerConfig struct {
 	maxBitrate                    int
 	overuseTime                   int
 	disableMeasurementUncertainty bool
+	rateCalculatorWindow          int
 }
 
 func newDelayController(c delayControllerConfig) *delayController {
@@ -74,7 +75,7 @@ func newDelayController(c delayControllerConfig) *delayController {
 	slopeEstimator := newSlopeEstimator(newKalman(setDisableMeasurementUncertaintyUpdates(c.disableMeasurementUncertainty)), overuseDetector.onDelayStats)
 	arrivalGroupAccumulator := newArrivalGroupAccumulator()
 
-	rc := newRateCalculator(500 * time.Millisecond)
+	rc := newRateCalculator(time.Duration(c.rateCalculatorWindow) * time.Millisecond)
 
 	delayController.wg.Add(2)
 	go func() {

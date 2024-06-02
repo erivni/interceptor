@@ -58,6 +58,7 @@ type SendSideBWE struct {
 
 	overuseTime                   int
 	disableMeasurementUncertainty bool
+	rateCalculatorWindow          int
 
 	close     chan struct{}
 	closeLock sync.RWMutex
@@ -107,10 +108,11 @@ func SendSideBWELossBasedOptions(options *LossBasedBandwidthEstimatorOptions) Op
 }
 
 // SendSideBWELossBasedOptions sets the different configuration values for the loss based algorithm
-func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool) Option {
+func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool, rateCalculatorWindow int) Option {
 	return func(e *SendSideBWE) error {
 		e.overuseTime = overuseTime
 		e.disableMeasurementUncertainty = disableMeasurementUncertainty
+		e.rateCalculatorWindow = rateCalculatorWindow
 		return nil
 	}
 }
@@ -131,6 +133,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 		maxBitrate:                    maxBitrate,
 		overuseTime:                   10,
 		disableMeasurementUncertainty: false,
+		rateCalculatorWindow:          500,
 		close:                         make(chan struct{}),
 	}
 	for _, opt := range opts {
@@ -149,6 +152,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 		maxBitrate:                    e.maxBitrate,
 		overuseTime:                   e.overuseTime,
 		disableMeasurementUncertainty: e.disableMeasurementUncertainty,
+		rateCalculatorWindow:          e.rateCalculatorWindow,
 	})
 
 	e.delayController.onUpdate(e.onDelayUpdate)
