@@ -51,8 +51,8 @@ func (c *rateCalculator) run(in <-chan []cc.Acknowledgment, onRateUpdate func(in
 				sum -= ack.Size
 			}
 			history = history[del:]
-			if len(history) == 0 {
-				onRateUpdate(0)
+			if len(history) < 2 {
+				//onRateUpdate(0)
 				continue
 			}
 			dt := next.Arrival.Sub(history[0].Arrival)
