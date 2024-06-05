@@ -19,9 +19,10 @@ type DelayStats struct {
 	Threshold        time.Duration
 	LastReceiveDelta time.Duration
 
-	Usage         usage
-	State         state
-	TargetBitrate int
+	Usage           usage
+	State           state
+	TargetBitrate   int
+	ReceivedBitrate int
 }
 
 type now func() time.Time

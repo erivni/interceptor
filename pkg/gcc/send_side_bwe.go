@@ -254,6 +254,7 @@ func (e *SendSideBWE) GetStats() map[string]interface{} {
 	defer e.lock.Unlock()
 
 	return map[string]interface{}{
+		"GccReceivedBitrate":  e.latestStats.DelayStats.ReceivedBitrate,
 		"GccLossTargetBitrate":  e.latestStats.LossStats.TargetBitrate,
 		"GccAverageLoss":        e.latestStats.AverageLoss,
 		"GccDelayTargetBitrate": e.latestStats.DelayStats.TargetBitrate,
