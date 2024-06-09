@@ -75,7 +75,8 @@ func (c *rateCalculator) run(in <-chan []cc.Acknowledgment, onRateUpdate func(in
 				totalDepartureDelta += historyDeparture[i].Departure.Sub(historyDeparture[i-1].Departure)
 			}
 
-			dt := next.Arrival.Sub(history[0].Arrival) - totalDepartureDelta
+			//dt := next.Arrival.Sub(history[0].Arrival) - totalDepartureDelta
+			dt := next.Arrival.Sub(history[0].Arrival)
 			bits := 8 * sum
 			rate := int(float64(bits) / dt.Seconds())
 			onRateUpdate(rate)
