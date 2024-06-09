@@ -24,11 +24,9 @@ func (c *rateCalculator) run(in <-chan []cc.Acknowledgment, onRateUpdate func(in
 	var historyDeparture []cc.Acknowledgment
 	init := false
 	sum := 0
-	sumDeparture := 0
 	for acks := range in {
 		for _, next := range acks {
 			historyDeparture = append(historyDeparture, next)
-			sumDeparture += next.Size
 			
 			if next.Arrival.IsZero() {
 				// Ignore packet if it didn't arrive
@@ -53,7 +51,6 @@ func (c *rateCalculator) run(in <-chan []cc.Acknowledgment, onRateUpdate func(in
 					break
 				}
 				del++
-				sumDeparture -= ack.Size
 			}
 			historyDeparture = historyDeparture[del:]
 
@@ -74,8 +71,8 @@ func (c *rateCalculator) run(in <-chan []cc.Acknowledgment, onRateUpdate func(in
 
 			// Calculate total departure delta for the remaining history
 			totalDepartureDelta := time.Duration(0)
-			for i := 1; i < len(history); i++ {
-				totalDepartureDelta += history[i].Departure.Sub(history[i-1].Departure)
+			for i := 1; i < len(historyDeparture); i++ {
+				totalDepartureDelta += historyDeparture[i].Departure.Sub(historyDeparture[i-1].Departure)
 			}
 
 			dt := next.Arrival.Sub(history[0].Arrival) - totalDepartureDelta
