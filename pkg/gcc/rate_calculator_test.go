@@ -63,15 +63,15 @@ func TestRateCalculator(t *testing.T) {
 			acks: getACKStream(10, 1200, 100*time.Millisecond),
 			expected: []int{
 				9_600,
-				192_000,
-				144_000,
-				128_000,
-				120_000,
-				115_200,
-				115_200,
-				115_200,
-				115_200,
-				115_200,
+				213333,
+				160000,
+				142222,
+				133333,
+				128000,
+				128000,
+				128000,
+				128000,
+				128000,
 			},
 		},
 	}
@@ -106,9 +106,12 @@ func TestRateCalculator(t *testing.T) {
 func getACKStream(length int, size int, interval time.Duration) []cc.Acknowledgment {
 	res := []cc.Acknowledgment{}
 	t0 := time.Now()
+	t1 := t0
 	for i := 0; i < length; i++ {
+		t1 = t1.Add(interval/10)
 		res = append(res, cc.Acknowledgment{
 			Size:    size,
+			Departure: t1,
 			Arrival: t0,
 		})
 		t0 = t0.Add(interval)
