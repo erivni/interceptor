@@ -218,7 +218,13 @@ func (c *rateController) increase(now time.Time) int {
 	// 	c.lastIncrease = time.Now()
 	// 	rate = clampInt(int(c.rateControllerOptions.IncreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
 	// }
-	return c.target + 250000
+
+	rate := c.target
+	if time.Since(c.lastIncrease) > c.rateControllerOptions.IncreaseTimeThreshold {
+		c.lastIncrease = time.Now()
+		rate = c.target + 250000
+	}
+	return rate
 }
 
 func (c *rateController) decrease(now time.Time) int {
@@ -236,5 +242,11 @@ func (c *rateController) decrease(now time.Time) int {
 	// 	c.lastIncrease = time.Now()
 	// 	rate = clampInt(int(c.rateControllerOptions.DecreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
 	// }
-	return c.target - 250000
+
+	rate := c.target
+	if time.Since(c.lastDecrease) > c.rateControllerOptions.DecreaseTimeThreshold {
+		c.lastIncrease = time.Now()
+		rate = c.target - 250000
+	}
+	return rate
 }
