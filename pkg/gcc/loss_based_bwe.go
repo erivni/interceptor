@@ -39,7 +39,7 @@ type LossBasedBandwidthEstimatorOptions struct {
 	DecreaseTimeThreshold time.Duration
 }
 
-func newLossBasedBWE(initialBitrate int, options *LossBasedBandwidthEstimatorOptions) *lossBasedBandwidthEstimator {
+func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options *LossBasedBandwidthEstimatorOptions) *lossBasedBandwidthEstimator {
 	if options == nil {
 		// constants from
 		// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
@@ -55,8 +55,8 @@ func newLossBasedBWE(initialBitrate int, options *LossBasedBandwidthEstimatorOpt
 
 	return &lossBasedBandwidthEstimator{
 		lock:           sync.Mutex{},
-		maxBitrate:     100_000_000, // 100 mbit
-		minBitrate:     100_000,     // 100 kbit
+		maxBitrate:     maxBitrate, 
+		minBitrate:     minBitrate,
 		bitrate:        initialBitrate,
 		averageLoss:    0,
 		lastLossUpdate: time.Time{},

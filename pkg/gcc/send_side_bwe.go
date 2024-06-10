@@ -147,7 +147,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 	if e.pacer == nil {
 		e.pacer = NewLeakyBucketPacer(e.latestBitrate)
 	}
-	e.lossController = newLossBasedBWE(e.latestBitrate, e.lossControllerOptions)
+	e.lossController = newLossBasedBWE(e.latestBitrate, e.minBitrate, e.maxBitrate, e.lossControllerOptions)
 	e.delayController = newDelayController(delayControllerConfig{
 		nowFn:                         time.Now,
 		initialBitrate:                e.latestBitrate,
