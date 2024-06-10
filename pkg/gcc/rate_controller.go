@@ -219,8 +219,7 @@ func (c *rateController) increase(now time.Time) int {
 	// 	c.lastIncrease = time.Now()
 	// 	rate = clampInt(int(c.rateControllerOptions.IncreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
 	// }
-	newtarget, _ := c.nextHigherBitrate(uint64(c.target))
-	return int(newtarget)
+	return c.target + 250000
 }
 
 func (c *rateController) decrease(now time.Time) int {
@@ -238,33 +237,5 @@ func (c *rateController) decrease(now time.Time) int {
 	// 	c.lastIncrease = time.Now()
 	// 	rate = clampInt(int(c.rateControllerOptions.DecreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
 	// }
-
-	newtarget, _ := c.nextLowerBitrate(uint64(c.target))
-	return int(newtarget)
-}
-
-func (c *rateController) nextHigherBitrate(currentBitrate uint64) (uint64, error) {
-	desiredBitrate := currentBitrate + 250000
-	if desiredBitrate > uint64(c.maxBitrate) ||
-		desiredBitrate < currentBitrate { // cover uint64-wrap cases where desiredBitrate is higher than uint64-max
-		desiredBitrate = uint64(c.maxBitrate)
-	}
-
-	if currentBitrate < desiredBitrate {
-		return desiredBitrate, nil
-	}
-	return 0, fmt.Errorf("current bitrate is already at max")
-}
-
-func (c *rateController) nextLowerBitrate(currentBitrate uint64) (uint64, error) {
-	desiredBitrate := currentBitrate - 250000
-	if desiredBitrate < uint64(c.minBitrate) ||
-		desiredBitrate > currentBitrate { // cover uint64-wrap cases where desiredBitrate is lowered under zero
-		desiredBitrate = uint64(c.minBitrate)
-	}
-	if currentBitrate > desiredBitrate {
-		return desiredBitrate, nil
-	}
-
-	return 0, fmt.Errorf("current bitrate is already at min")
+	return c.target - 250000
 }
