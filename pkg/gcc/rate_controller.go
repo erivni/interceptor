@@ -74,10 +74,10 @@ func newRateController(now now, initialTargetBitrate, minBitrate, maxBitrate int
 	}
 
 	bitrateControlBucketsManager := BitrateControlBucketsConfig{
-		BitrateStableThreshold:              15*25,
+		BitrateStableThreshold:              5*25,
 		HandleUnstableBitrateGracePeriodSec: 2,
 		BitrateBucketIncrement:              250000,
-		BackoffDurationsSec:                 []float64{0, 15, 30, 60},
+		BackoffDurationsSec:                 []float64{0, 0, 15, 30, 60},
 	}
 
 	manager  := NewManager(&bitrateControlBucketsManager)
