@@ -107,11 +107,13 @@ func (e *lossBasedBandwidthEstimator) updateLossEstimate(results []cc.Acknowledg
 	if increaseLoss < e.options.IncreaseLossThreshold && time.Since(e.lastIncrease) > e.options.IncreaseTimeThreshold {
 		e.log.Infof("loss controller increasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
 		e.lastIncrease = time.Now()
-		e.bitrate = clampInt(int(e.options.IncreaseFactor*float64(e.bitrate)), e.minBitrate, e.maxBitrate)
+		//e.bitrate = clampInt(int(e.options.IncreaseFactor*float64(e.bitrate)), e.minBitrate, e.maxBitrate)
+		e.bitrate = clampInt(int(e.bitrate + 250000), e.minBitrate, e.maxBitrate)
 	} else if decreaseLoss > e.options.DecreaseLossThreshold && time.Since(e.lastDecrease) > e.options.DecreaseTimeThreshold {
 		e.log.Infof("loss controller decreasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
 		e.lastDecrease = time.Now()
-		e.bitrate = clampInt(int(float64(e.bitrate)*(1-0.5*decreaseLoss)), e.minBitrate, e.maxBitrate)
+		//e.bitrate = clampInt(int(float64(e.bitrate)*(1-0.5*decreaseLoss)), e.minBitrate, e.maxBitrate)
+		e.bitrate = clampInt(int(e.bitrate - 250000), e.minBitrate, e.maxBitrate)
 	}
 }
 
