@@ -49,6 +49,7 @@ type delayControllerConfig struct {
 	overuseTime                   int
 	disableMeasurementUncertainty bool
 	rateCalculatorWindow          int
+	rateControllerOptions         *RateControllerOptions
 }
 
 func newDelayController(c delayControllerConfig) *delayController {
@@ -65,7 +66,7 @@ func newDelayController(c delayControllerConfig) *delayController {
 		log:                     logging.NewDefaultLoggerFactory().NewLogger("gcc_delay_controller"),
 	}
 
-	rateController := newRateController(c.nowFn, c.initialBitrate, c.minBitrate, c.maxBitrate, func(ds DelayStats) {
+	rateController := newRateController(c.nowFn, c.initialBitrate, c.minBitrate, c.maxBitrate, c.rateControllerOptions, func(ds DelayStats) {
 		delayController.log.Infof("delaystats: %v", ds)
 		if delayController.onUpdateCallback != nil {
 			delayController.onUpdateCallback(ds)

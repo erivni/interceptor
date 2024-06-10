@@ -4,7 +4,6 @@
 package gcc
 
 import (
-	"math"
 	"sync"
 	"time"
 )
@@ -13,6 +12,13 @@ import (
 // 	decreaseEMAAlpha = 0.95
 // 	beta             = 0.85
 // )
+
+type RateControllerOptions struct {
+	IncreaseTimeThreshold time.Duration
+	IncreaseFactor        float64
+	DecreaseTimeThreshold time.Duration
+	DecreaseFactor        float64
+}
 
 type rateController struct {
 	now                  now
@@ -31,6 +37,10 @@ type rateController struct {
 	latestRTT          time.Duration
 	latestReceivedRate int
 	//latestDecreaseRate *exponentialMovingAverage
+
+	lastIncrease          time.Time
+	lastDecrease          time.Time
+	rateControllerOptions *RateControllerOptions
 }
 
 // type exponentialMovingAverage struct {
@@ -50,7 +60,17 @@ type rateController struct {
 // 	}
 // }
 
-func newRateController(now now, initialTargetBitrate, minBitrate, maxBitrate int, dsw func(DelayStats)) *rateController {
+func newRateController(now now, initialTargetBitrate, minBitrate, maxBitrate int, rateControllerOptions *RateControllerOptions, dsw func(DelayStats)) *rateController {
+	if rateControllerOptions == nil {
+		defaultOptions := RateControllerOptions{
+			IncreaseTimeThreshold: 100 * time.Millisecond,
+			IncreaseFactor:        1.15,
+			DecreaseTimeThreshold: 100 * time.Millisecond,
+			DecreaseFactor:        0.85,
+		}
+		rateControllerOptions = &defaultOptions
+	}
+
 	return &rateController{
 		now:                  now,
 		initialTargetBitrate: initialTargetBitrate,
@@ -65,6 +85,10 @@ func newRateController(now now, initialTargetBitrate, minBitrate, maxBitrate int
 		latestRTT:            0,
 		latestReceivedRate:   0,
 		//latestDecreaseRate:   &exponentialMovingAverage{},
+
+		rateControllerOptions: rateControllerOptions,
+		lastIncrease:          time.Time{},
+		lastDecrease:          time.Time{},
 	}
 }
 
@@ -163,10 +187,14 @@ func (c *rateController) increase(now time.Time) int {
 	// 	return c.target
 	// }
 
-	factor := math.Min(math.Pow(1.5, now.Sub(c.lastUpdate).Seconds()), 1.15)
-	rate :=	int(float64(c.target) * factor)
-	c.lastUpdate = now
-
+	// factor := math.Min(math.Pow(1.5, now.Sub(c.lastUpdate).Seconds()), 1.15)
+	// rate := int(float64(c.target) * factor)
+	// c.lastUpdate = now
+	rate := c.target
+	if time.Since(c.lastIncrease) > c.rateControllerOptions.IncreaseTimeThreshold {
+		c.lastIncrease = time.Now()
+		rate = clampInt(int(c.rateControllerOptions.IncreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
+	}
 	return rate
 }
 
@@ -174,9 +202,16 @@ func (c *rateController) decrease(now time.Time) int {
 	// target := int(beta * float64(c.latestReceivedRate))
 	// c.latestDecreaseRate.update(float64(c.latestReceivedRate))
 	// c.lastUpdate = c.now()
-	factor := math.Max(math.Pow(0.5, now.Sub(c.lastUpdate).Seconds()), 0.85)
-	target :=	int(float64(c.target) * factor)
-	c.lastUpdate = now
 
-	return target
+	// factor := math.Max(math.Pow(0.5, now.Sub(c.lastUpdate).Seconds()), 0.85)
+	// target := int(float64(c.target) * factor)
+	// c.lastUpdate = now
+	// return target
+
+	rate := c.target
+	if time.Since(c.lastDecrease) > c.rateControllerOptions.DecreaseTimeThreshold {
+		c.lastIncrease = time.Now()
+		rate = clampInt(int(c.rateControllerOptions.DecreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
+	}
+	return rate
 }

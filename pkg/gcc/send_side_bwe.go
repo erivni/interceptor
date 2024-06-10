@@ -59,6 +59,7 @@ type SendSideBWE struct {
 	overuseTime                   int
 	disableMeasurementUncertainty bool
 	rateCalculatorWindow          int
+	rateControllerOptions         *RateControllerOptions
 
 	close     chan struct{}
 	closeLock sync.RWMutex
@@ -108,11 +109,12 @@ func SendSideBWELossBasedOptions(options *LossBasedBandwidthEstimatorOptions) Op
 }
 
 // SendSideBWELossBasedOptions sets the different configuration values for the loss based algorithm
-func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool, rateCalculatorWindow int) Option {
+func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool, rateCalculatorWindow int, rateControllerOptions *RateControllerOptions) Option {
 	return func(e *SendSideBWE) error {
 		e.overuseTime = overuseTime
 		e.disableMeasurementUncertainty = disableMeasurementUncertainty
 		e.rateCalculatorWindow = rateCalculatorWindow
+		e.rateControllerOptions = rateControllerOptions
 		return nil
 	}
 }
@@ -134,6 +136,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 		overuseTime:                   10,
 		disableMeasurementUncertainty: false,
 		rateCalculatorWindow:          500,
+		rateControllerOptions:         nil,
 		close:                         make(chan struct{}),
 	}
 	for _, opt := range opts {
@@ -153,6 +156,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 		overuseTime:                   e.overuseTime,
 		disableMeasurementUncertainty: e.disableMeasurementUncertainty,
 		rateCalculatorWindow:          e.rateCalculatorWindow,
+		rateControllerOptions:         e.rateControllerOptions,
 	})
 
 	e.delayController.onUpdate(e.onDelayUpdate)
@@ -254,7 +258,7 @@ func (e *SendSideBWE) GetStats() map[string]interface{} {
 	defer e.lock.Unlock()
 
 	return map[string]interface{}{
-		"GccReceivedBitrate":  e.latestStats.DelayStats.ReceivedBitrate,
+		"GccReceivedBitrate":    e.latestStats.DelayStats.ReceivedBitrate,
 		"GccLossTargetBitrate":  e.latestStats.LossStats.TargetBitrate,
 		"GccAverageLoss":        e.latestStats.AverageLoss,
 		"GccDelayTargetBitrate": e.latestStats.DelayStats.TargetBitrate,
