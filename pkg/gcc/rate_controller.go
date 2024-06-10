@@ -4,7 +4,6 @@
 package gcc
 
 import (
-	"fmt"
 	"sync"
 	"time"
 )
