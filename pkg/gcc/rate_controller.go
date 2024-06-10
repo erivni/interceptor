@@ -147,7 +147,7 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 
 		suggestedTarget := clampInt(c.increase(now), c.minBitrate, c.maxBitrate)
 		err := c.bitrateControlBucketsManager.CanIncreaseToBitrate(uint64(c.target), uint64(suggestedTarget))
-		if err != nil {
+		if err == nil {
 			c.target = suggestedTarget
 		}
 
