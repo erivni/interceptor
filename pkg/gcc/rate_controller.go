@@ -4,6 +4,7 @@
 package gcc
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -41,6 +42,8 @@ type rateController struct {
 	lastIncrease          time.Time
 	lastDecrease          time.Time
 	rateControllerOptions *RateControllerOptions
+
+	bitrateControlBucketsManager *Manager
 }
 
 // type exponentialMovingAverage struct {
@@ -71,19 +74,30 @@ func newRateController(now now, initialTargetBitrate, minBitrate, maxBitrate int
 		rateControllerOptions = &defaultOptions
 	}
 
+	bitrateControlBucketsManager := BitrateControlBucketsConfig{
+		BitrateStableThreshold:              15*25,
+		HandleUnstableBitrateGracePeriodSec: 2,
+		BitrateBucketIncrement:              250000,
+		BackoffDurationsSec:                 []float64{0, 15, 30, 60},
+	}
+
+	manager  := NewManager(&bitrateControlBucketsManager)
+	manager.InitializeBuckets(uint64(maxBitrate))
+
 	return &rateController{
-		now:                  now,
-		initialTargetBitrate: initialTargetBitrate,
-		minBitrate:           minBitrate,
-		maxBitrate:           maxBitrate,
-		dsWriter:             dsw,
-		init:                 false,
-		delayStats:           DelayStats{},
-		target:               initialTargetBitrate,
-		lastUpdate:           time.Time{},
-		lastState:            stateIncrease,
-		latestRTT:            0,
-		latestReceivedRate:   0,
+		now:                          now,
+		initialTargetBitrate:         initialTargetBitrate,
+		minBitrate:                   minBitrate,
+		maxBitrate:                   maxBitrate,
+		dsWriter:                     dsw,
+		init:                         false,
+		delayStats:                   DelayStats{},
+		target:                       initialTargetBitrate,
+		lastUpdate:                   time.Time{},
+		lastState:                    stateIncrease,
+		latestRTT:                    0,
+		latestReceivedRate:           0,
+		bitrateControlBucketsManager: manager,
 		//latestDecreaseRate:   &exponentialMovingAverage{},
 
 		rateControllerOptions: rateControllerOptions,
@@ -117,6 +131,7 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 	c.delayStats.State = c.delayStats.State.transition(ds.Usage)
 
 	if c.delayStats.State == stateHold {
+		c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
 		return
 	}
 
@@ -128,7 +143,14 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 	case stateHold:
 		// should never occur due to check above, but makes the linter happy
 	case stateIncrease:
-		c.target = clampInt(c.increase(now), c.minBitrate, c.maxBitrate)
+		c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
+
+		suggestedTarget := clampInt(c.increase(now), c.minBitrate, c.maxBitrate)
+		err := c.bitrateControlBucketsManager.CanIncreaseToBitrate(uint64(c.target), uint64(suggestedTarget))
+		if err != nil {
+			c.target = suggestedTarget
+		}
+
 		next = DelayStats{
 			Measurement:      c.delayStats.Measurement,
 			Estimate:         c.delayStats.Estimate,
@@ -141,7 +163,9 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 		}
 
 	case stateDecrease:
+		c.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(c.target))
 		c.target = clampInt(c.decrease(now), c.minBitrate, c.maxBitrate)
+
 		next = DelayStats{
 			Measurement:      c.delayStats.Measurement,
 			Estimate:         c.delayStats.Estimate,
@@ -190,12 +214,13 @@ func (c *rateController) increase(now time.Time) int {
 	// factor := math.Min(math.Pow(1.5, now.Sub(c.lastUpdate).Seconds()), 1.15)
 	// rate := int(float64(c.target) * factor)
 	// c.lastUpdate = now
-	rate := c.target
-	if time.Since(c.lastIncrease) > c.rateControllerOptions.IncreaseTimeThreshold {
-		c.lastIncrease = time.Now()
-		rate = clampInt(int(c.rateControllerOptions.IncreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
-	}
-	return rate
+	// rate := c.target
+	// if time.Since(c.lastIncrease) > c.rateControllerOptions.IncreaseTimeThreshold {
+	// 	c.lastIncrease = time.Now()
+	// 	rate = clampInt(int(c.rateControllerOptions.IncreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
+	// }
+	newtarget, _ := c.nextHigherBitrate(uint64(c.target))
+	return int(newtarget)
 }
 
 func (c *rateController) decrease(now time.Time) int {
@@ -208,10 +233,38 @@ func (c *rateController) decrease(now time.Time) int {
 	// c.lastUpdate = now
 	// return target
 
-	rate := c.target
-	if time.Since(c.lastDecrease) > c.rateControllerOptions.DecreaseTimeThreshold {
-		c.lastIncrease = time.Now()
-		rate = clampInt(int(c.rateControllerOptions.DecreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
+	// rate := c.target
+	// if time.Since(c.lastDecrease) > c.rateControllerOptions.DecreaseTimeThreshold {
+	// 	c.lastIncrease = time.Now()
+	// 	rate = clampInt(int(c.rateControllerOptions.DecreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
+	// }
+
+	newtarget, _ := c.nextLowerBitrate(uint64(c.target))
+	return int(newtarget)
+}
+
+func (c *rateController) nextHigherBitrate(currentBitrate uint64) (uint64, error) {
+	desiredBitrate := currentBitrate + 250000
+	if desiredBitrate > uint64(c.maxBitrate) ||
+		desiredBitrate < currentBitrate { // cover uint64-wrap cases where desiredBitrate is higher than uint64-max
+		desiredBitrate = uint64(c.maxBitrate)
 	}
-	return rate
+
+	if currentBitrate < desiredBitrate {
+		return desiredBitrate, nil
+	}
+	return 0, fmt.Errorf("current bitrate is already at max")
+}
+
+func (c *rateController) nextLowerBitrate(currentBitrate uint64) (uint64, error) {
+	desiredBitrate := currentBitrate - 250000
+	if desiredBitrate < uint64(c.minBitrate) ||
+		desiredBitrate > currentBitrate { // cover uint64-wrap cases where desiredBitrate is lowered under zero
+		desiredBitrate = uint64(c.minBitrate)
+	}
+	if currentBitrate > desiredBitrate {
+		return desiredBitrate, nil
+	}
+
+	return 0, fmt.Errorf("current bitrate is already at min")
 }
