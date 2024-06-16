@@ -4,21 +4,15 @@
 package gcc
 
 import (
+	"math"
 	"sync"
 	"time"
 )
 
-// const (
-// 	decreaseEMAAlpha = 0.95
-// 	beta             = 0.85
-// )
-
-type RateControllerOptions struct {
-	IncreaseTimeThreshold time.Duration
-	IncreaseFactor        float64
-	DecreaseTimeThreshold time.Duration
-	DecreaseFactor        float64
-}
+const (
+	decreaseEMAAlpha = 0.95
+	beta             = 0.85
+)
 
 type rateController struct {
 	now                  now
@@ -36,72 +30,41 @@ type rateController struct {
 	lastState          state
 	latestRTT          time.Duration
 	latestReceivedRate int
-	//latestDecreaseRate *exponentialMovingAverage
-
-	lastIncrease          time.Time
-	lastDecrease          time.Time
-	rateControllerOptions *RateControllerOptions
-
-	bitrateControlBucketsManager *Manager
+	latestDecreaseRate *exponentialMovingAverage
 }
 
-// type exponentialMovingAverage struct {
-// 	average      float64
-// 	variance     float64
-// 	stdDeviation float64
-// }
+type exponentialMovingAverage struct {
+	average      float64
+	variance     float64
+	stdDeviation float64
+}
 
-// func (a *exponentialMovingAverage) update(value float64) {
-// 	if a.average == 0.0 {
-// 		a.average = value
-// 	} else {
-// 		x := value - a.average
-// 		a.average += decreaseEMAAlpha * x
-// 		a.variance = (1 - decreaseEMAAlpha) * (a.variance + decreaseEMAAlpha*x*x)
-// 		a.stdDeviation = math.Sqrt(a.variance)
-// 	}
-// }
-
-func newRateController(now now, initialTargetBitrate, minBitrate, maxBitrate int, rateControllerOptions *RateControllerOptions, dsw func(DelayStats)) *rateController {
-	if rateControllerOptions == nil {
-		defaultOptions := RateControllerOptions{
-			IncreaseTimeThreshold: 100 * time.Millisecond,
-			IncreaseFactor:        1.15,
-			DecreaseTimeThreshold: 100 * time.Millisecond,
-			DecreaseFactor:        0.85,
-		}
-		rateControllerOptions = &defaultOptions
+func (a *exponentialMovingAverage) update(value float64) {
+	if a.average == 0.0 {
+		a.average = value
+	} else {
+		x := value - a.average
+		a.average += decreaseEMAAlpha * x
+		a.variance = (1 - decreaseEMAAlpha) * (a.variance + decreaseEMAAlpha*x*x)
+		a.stdDeviation = math.Sqrt(a.variance)
 	}
+}
 
-	bitrateControlBucketsManager := BitrateControlBucketsConfig{
-		BitrateStableThreshold:              5*25,
-		HandleUnstableBitrateGracePeriodSec: 2,
-		BitrateBucketIncrement:              250000,
-		BackoffDurationsSec:                 []float64{0, 0, 15, 30, 60},
-	}
-
-	manager  := NewManager(&bitrateControlBucketsManager)
-	manager.InitializeBuckets(uint64(maxBitrate))
-
+func newRateController(now now, initialTargetBitrate, minBitrate, maxBitrate int, dsw func(DelayStats)) *rateController {
 	return &rateController{
-		now:                          now,
-		initialTargetBitrate:         initialTargetBitrate,
-		minBitrate:                   minBitrate,
-		maxBitrate:                   maxBitrate,
-		dsWriter:                     dsw,
-		init:                         false,
-		delayStats:                   DelayStats{},
-		target:                       initialTargetBitrate,
-		lastUpdate:                   time.Time{},
-		lastState:                    stateIncrease,
-		latestRTT:                    0,
-		latestReceivedRate:           0,
-		bitrateControlBucketsManager: manager,
-		//latestDecreaseRate:   &exponentialMovingAverage{},
-
-		rateControllerOptions: rateControllerOptions,
-		lastIncrease:          time.Time{},
-		lastDecrease:          time.Time{},
+		now:                  now,
+		initialTargetBitrate: initialTargetBitrate,
+		minBitrate:           minBitrate,
+		maxBitrate:           maxBitrate,
+		dsWriter:             dsw,
+		init:                 false,
+		delayStats:           DelayStats{},
+		target:               initialTargetBitrate,
+		lastUpdate:           time.Time{},
+		lastState:            stateIncrease,
+		latestRTT:            0,
+		latestReceivedRate:   0,
+		latestDecreaseRate:   &exponentialMovingAverage{},
 	}
 }
 
@@ -130,7 +93,6 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 	c.delayStats.State = c.delayStats.State.transition(ds.Usage)
 
 	if c.delayStats.State == stateHold {
-		c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
 		return
 	}
 
@@ -142,14 +104,7 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 	case stateHold:
 		// should never occur due to check above, but makes the linter happy
 	case stateIncrease:
-		c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
-
-		suggestedTarget := clampInt(c.increase(now), c.minBitrate, c.maxBitrate)
-		err := c.bitrateControlBucketsManager.CanIncreaseToBitrate(uint64(c.target), uint64(suggestedTarget))
-		if err == nil {
-			c.target = suggestedTarget
-		}
-
+		c.target = clampInt(c.increase(now), c.minBitrate, c.maxBitrate)
 		next = DelayStats{
 			Measurement:      c.delayStats.Measurement,
 			Estimate:         c.delayStats.Estimate,
@@ -158,13 +113,10 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 			Usage:            c.delayStats.Usage,
 			State:            c.delayStats.State,
 			TargetBitrate:    c.target,
-			ReceivedBitrate:  c.latestReceivedRate,
 		}
 
 	case stateDecrease:
-		c.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(c.target))
-		c.target = clampInt(c.decrease(now), c.minBitrate, c.maxBitrate)
-
+		c.target = clampInt(c.decrease(), c.minBitrate, c.maxBitrate)
 		next = DelayStats{
 			Measurement:      c.delayStats.Measurement,
 			Estimate:         c.delayStats.Estimate,
@@ -173,7 +125,6 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 			Usage:            c.delayStats.Usage,
 			State:            c.delayStats.State,
 			TargetBitrate:    c.target,
-			ReceivedBitrate:  c.latestReceivedRate,
 		}
 	}
 
@@ -183,70 +134,38 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 }
 
 func (c *rateController) increase(now time.Time) int {
-	// if c.latestDecreaseRate.average > 0 && float64(c.latestReceivedRate) > c.latestDecreaseRate.average-3*c.latestDecreaseRate.stdDeviation &&
-	// 	float64(c.latestReceivedRate) < c.latestDecreaseRate.average+3*c.latestDecreaseRate.stdDeviation {
-	// 	bitsPerFrame := float64(c.target) / 25.0
-	// 	packetsPerFrame := math.Ceil(bitsPerFrame / (1200 * 8))
-	// 	expectedPacketSizeBits := bitsPerFrame / packetsPerFrame
+	if c.latestDecreaseRate.average > 0 && float64(c.latestReceivedRate) > c.latestDecreaseRate.average-3*c.latestDecreaseRate.stdDeviation &&
+		float64(c.latestReceivedRate) < c.latestDecreaseRate.average+3*c.latestDecreaseRate.stdDeviation {
+		bitsPerFrame := float64(c.target) / 30.0
+		packetsPerFrame := math.Ceil(bitsPerFrame / (1200 * 8))
+		expectedPacketSizeBits := bitsPerFrame / packetsPerFrame
 
-	// 	responseTime := 100*time.Millisecond + c.latestRTT
-	// 	alpha := 0.5 * math.Min(float64(now.Sub(c.lastUpdate).Milliseconds())/float64(responseTime.Milliseconds()), 1.0)
-	// 	increase := int(math.Max(1000.0, alpha*expectedPacketSizeBits))
-	// 	c.lastUpdate = now
-	// 	return int(math.Min(float64(c.target+increase), 1.5*float64(c.latestReceivedRate)))
-	// }
-	// eta := math.Pow(1.08, math.Min(float64(now.Sub(c.lastUpdate).Milliseconds())/1000, 1.0))
-	// c.lastUpdate = now
+		responseTime := 100*time.Millisecond + c.latestRTT
+		alpha := 0.5 * math.Min(float64(now.Sub(c.lastUpdate).Milliseconds())/float64(responseTime.Milliseconds()), 1.0)
+		increase := int(math.Max(1000.0, alpha*expectedPacketSizeBits))
+		c.lastUpdate = now
+		return int(math.Min(float64(c.target+increase), 1.5*float64(c.latestReceivedRate)))
+	}
+	eta := math.Pow(1.08, math.Min(float64(now.Sub(c.lastUpdate).Milliseconds())/1000, 1.0))
+	c.lastUpdate = now
 
-	// rate := int(eta * float64(c.target))
+	rate := int(eta * float64(c.target))
 
-	// // maximum increase to 1.5 * received rate
-	// received := int(1.5 * float64(c.latestReceivedRate))
-	// if rate > received && received > c.target {
-	// 	return received
-	// }
+	// maximum increase to 1.5 * received rate
+	received := int(1.5 * float64(c.latestReceivedRate))
+	if rate > received && received > c.target {
+		return received
+	}
 
-	// if rate < c.target {
-	// 	return c.target
-	// }
-
-	// factor := math.Min(math.Pow(1.5, now.Sub(c.lastUpdate).Seconds()), 1.15)
-	// rate := int(float64(c.target) * factor)
-	// c.lastUpdate = now
-	// rate := c.target
-	// if time.Since(c.lastIncrease) > c.rateControllerOptions.IncreaseTimeThreshold {
-	// 	c.lastIncrease = time.Now()
-	// 	rate = clampInt(int(c.rateControllerOptions.IncreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
-	// }
-
-	rate := c.target
-	if time.Since(c.lastIncrease) > c.rateControllerOptions.IncreaseTimeThreshold {
-		c.lastIncrease = time.Now()
-		rate = c.target + 250000
+	if rate < c.target {
+		return c.target
 	}
 	return rate
 }
 
-func (c *rateController) decrease(now time.Time) int {
-	// target := int(beta * float64(c.latestReceivedRate))
-	// c.latestDecreaseRate.update(float64(c.latestReceivedRate))
-	// c.lastUpdate = c.now()
-
-	// factor := math.Max(math.Pow(0.5, now.Sub(c.lastUpdate).Seconds()), 0.85)
-	// target := int(float64(c.target) * factor)
-	// c.lastUpdate = now
-	// return target
-
-	// rate := c.target
-	// if time.Since(c.lastDecrease) > c.rateControllerOptions.DecreaseTimeThreshold {
-	// 	c.lastIncrease = time.Now()
-	// 	rate = clampInt(int(c.rateControllerOptions.DecreaseFactor*float64(c.target)), c.minBitrate, c.maxBitrate)
-	// }
-
-	rate := c.target
-	if time.Since(c.lastDecrease) > c.rateControllerOptions.DecreaseTimeThreshold {
-		c.lastIncrease = time.Now()
-		rate = c.target - 250000
-	}
-	return rate
+func (c *rateController) decrease() int {
+	target := int(beta * float64(c.latestReceivedRate))
+	c.latestDecreaseRate.update(float64(c.latestReceivedRate))
+	c.lastUpdate = c.now()
+	return target
 }

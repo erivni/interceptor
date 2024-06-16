@@ -12,66 +12,66 @@ import (
 )
 
 func TestRateCalculator(t *testing.T) {
-	//t0 := time.Now()
+	t0 := time.Now()
 	cases := []struct {
 		name     string
 		acks     []cc.Acknowledgment
 		expected []int
 	}{
-		// {
-		// 	name:     "emptyCreatesNoRate",
-		// 	acks:     []cc.Acknowledgment{},
-		// 	expected: []int{},
-		// },
-		// {
-		// 	name: "ignoresZeroArrivalTimes",
-		// 	acks: []cc.Acknowledgment{{
-		// 		SequenceNumber: 0,
-		// 		Size:           0,
-		// 		Departure:      time.Time{},
-		// 		Arrival:        time.Time{},
-		// 	}},
-		// 	expected: []int{},
-		// },
-		// {
-		// 	name: "singleAckCreatesRate",
-		// 	acks: []cc.Acknowledgment{{
-		// 		SequenceNumber: 0,
-		// 		Size:           1000,
-		// 		Departure:      time.Time{},
-		// 		Arrival:        t0,
-		// 	}},
-		// 	expected: []int{8000},
-		// },
-		// {
-		// 	name: "twoAcksCalculateCorrectRates",
-		// 	acks: []cc.Acknowledgment{{
-		// 		SequenceNumber: 0,
-		// 		Size:           125,
-		// 		Departure:      time.Time{},
-		// 		Arrival:        t0,
-		// 	}, {
-		// 		SequenceNumber: 0,
-		// 		Size:           125,
-		// 		Departure:      time.Time{},
-		// 		Arrival:        t0.Add(100 * time.Millisecond),
-		// 	}},
-		// 	expected: []int{1000, 20_000},
-		// },
+		{
+			name:     "emptyCreatesNoRate",
+			acks:     []cc.Acknowledgment{},
+			expected: []int{},
+		},
+		{
+			name: "ignoresZeroArrivalTimes",
+			acks: []cc.Acknowledgment{{
+				SequenceNumber: 0,
+				Size:           0,
+				Departure:      time.Time{},
+				Arrival:        time.Time{},
+			}},
+			expected: []int{},
+		},
+		{
+			name: "singleAckCreatesRate",
+			acks: []cc.Acknowledgment{{
+				SequenceNumber: 0,
+				Size:           1000,
+				Departure:      time.Time{},
+				Arrival:        t0,
+			}},
+			expected: []int{8000},
+		},
+		{
+			name: "twoAcksCalculateCorrectRates",
+			acks: []cc.Acknowledgment{{
+				SequenceNumber: 0,
+				Size:           125,
+				Departure:      time.Time{},
+				Arrival:        t0,
+			}, {
+				SequenceNumber: 0,
+				Size:           125,
+				Departure:      time.Time{},
+				Arrival:        t0.Add(100 * time.Millisecond),
+			}},
+			expected: []int{1000, 20_000},
+		},
 		{
 			name: "steadyACKsCalculateCorrectRates",
 			acks: getACKStream(10, 1200, 100*time.Millisecond),
 			expected: []int{
 				9_600,
-				213333,
-				160000,
-				142222,
-				133333,
-				128000,
-				130909,
-				133953,
-				137142,
-				140487,
+				192_000,
+				144_000,
+				128_000,
+				120_000,
+				115_200,
+				115_200,
+				115_200,
+				115_200,
+				115_200,
 			},
 		},
 	}

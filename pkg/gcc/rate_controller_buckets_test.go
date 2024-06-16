@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRateControllerRun(t *testing.T) {
+func TestRateControllerBucketsRun(t *testing.T) {
 	cases := []struct {
 		name           string
 		initialBitrate int
@@ -30,9 +30,10 @@ func TestRateControllerRun(t *testing.T) {
 			expected: []DelayStats{{
 				Usage:         usageNormal,
 				State:         stateIncrease,
-				TargetBitrate: 108_000,
+				TargetBitrate: 350_000,
 				Estimate:      0,
 				Threshold:     0,
+				ReceivedBitrate: 100_000,
 			}},
 		},
 	}
@@ -46,7 +47,7 @@ func TestRateControllerRun(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			out := make(chan DelayStats)
-			dc := newRateController(mockNoFn, 100_000, 1_000, 50_000_000, func(ds DelayStats) {
+			dc := newRateControllerBuckets(mockNoFn, 100_000, 1_000, 50_000_000, nil, func(ds DelayStats) {
 				out <- ds
 			})
 			in := make(chan DelayStats)

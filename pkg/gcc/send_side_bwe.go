@@ -59,7 +59,7 @@ type SendSideBWE struct {
 	overuseTime                   int
 	disableMeasurementUncertainty bool
 	rateCalculatorWindow          int
-	rateControllerOptions         *RateControllerOptions
+	rateControllerOptions         *RateControllerBucketsOptions
 
 	close     chan struct{}
 	closeLock sync.RWMutex
@@ -109,7 +109,7 @@ func SendSideBWELossBasedOptions(options *LossBasedBandwidthEstimatorOptions) Op
 }
 
 // SendSideBWELossBasedOptions sets the different configuration values for the loss based algorithm
-func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool, rateCalculatorWindow int, rateControllerOptions *RateControllerOptions) Option {
+func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool, rateCalculatorWindow int, rateControllerOptions *RateControllerBucketsOptions) Option {
 	return func(e *SendSideBWE) error {
 		e.overuseTime = overuseTime
 		e.disableMeasurementUncertainty = disableMeasurementUncertainty
@@ -235,7 +235,7 @@ func (e *SendSideBWE) WriteRTCP(pkts []rtcp.Packet, _ interceptor.Attributes) er
 			feedbackMinRTT = time.Duration(minInt(int(rtt), int(feedbackMinRTT)))
 		}
 		if feedbackMinRTT < math.MaxInt {
-			e.delayController.updateRTT(feedbackMinRTT)
+			e.delayController.rateController.updateRTT(feedbackMinRTT)
 		}
 
 		e.lossController.updateLossEstimate(acks)
@@ -258,6 +258,7 @@ func (e *SendSideBWE) GetStats() map[string]interface{} {
 	defer e.lock.Unlock()
 
 	return map[string]interface{}{
+		"GccLatestRTT":          e.latestStats.DelayStats.LatestRTT,
 		"GccReceivedBitrate":    e.latestStats.DelayStats.ReceivedBitrate,
 		"GccLossTargetBitrate":  e.latestStats.LossStats.TargetBitrate,
 		"GccAverageLoss":        e.latestStats.AverageLoss,

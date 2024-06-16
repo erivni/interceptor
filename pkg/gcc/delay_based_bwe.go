@@ -23,6 +23,7 @@ type DelayStats struct {
 	State           state
 	TargetBitrate   int
 	ReceivedBitrate int
+	LatestRTT       time.Duration
 }
 
 type now func() time.Time
@@ -32,7 +33,7 @@ type delayController struct {
 	ackRatePipe chan<- []cc.Acknowledgment
 
 	*arrivalGroupAccumulator
-	*rateController
+	rateController *rateControllerBuckets
 
 	onUpdateCallback func(DelayStats)
 
@@ -49,7 +50,7 @@ type delayControllerConfig struct {
 	overuseTime                   int
 	disableMeasurementUncertainty bool
 	rateCalculatorWindow          int
-	rateControllerOptions         *RateControllerOptions
+	rateControllerOptions         *RateControllerBucketsOptions
 }
 
 func newDelayController(c delayControllerConfig) *delayController {
@@ -66,7 +67,7 @@ func newDelayController(c delayControllerConfig) *delayController {
 		log:                     logging.NewDefaultLoggerFactory().NewLogger("gcc_delay_controller"),
 	}
 
-	rateController := newRateController(c.nowFn, c.initialBitrate, c.minBitrate, c.maxBitrate, c.rateControllerOptions, func(ds DelayStats) {
+	rateController := newRateControllerBuckets(c.nowFn, c.initialBitrate, c.minBitrate, c.maxBitrate, c.rateControllerOptions, func(ds DelayStats) {
 		delayController.log.Infof("delaystats: %v", ds)
 		if delayController.onUpdateCallback != nil {
 			delayController.onUpdateCallback(ds)
