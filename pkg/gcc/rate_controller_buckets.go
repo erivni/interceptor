@@ -135,6 +135,7 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 			State:            c.delayStats.State,
 			TargetBitrate:    c.target,
 			ReceivedBitrate:  c.latestReceivedRate,
+			LatestRTT:        c.latestRTT,
 		}
 
 	case stateDecrease:
