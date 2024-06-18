@@ -257,11 +257,17 @@ func (e *SendSideBWE) GetStats() map[string]interface{} {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 
+
+	averageLoss := e.latestStats.AverageLoss
+	if math.Abs(averageLoss) < 1e-10 {
+		averageLoss = 0
+	}
+
 	return map[string]interface{}{
 		"GccLatestRTT":          e.latestStats.DelayStats.LatestRTT,
 		"GccReceivedBitrate":    e.latestStats.DelayStats.ReceivedBitrate,
 		"GccLossTargetBitrate":  e.latestStats.LossStats.TargetBitrate,
-		"GccAverageLoss":        e.latestStats.AverageLoss,
+		"GccAverageLoss":        averageLoss,
 		"GccDelayTargetBitrate": e.latestStats.DelayStats.TargetBitrate,
 		"GccDelayMeasurement":   float64(e.latestStats.Measurement.Microseconds()) / 1000.0,
 		"GccDelayEstimate":      float64(e.latestStats.Estimate.Microseconds()) / 1000.0,

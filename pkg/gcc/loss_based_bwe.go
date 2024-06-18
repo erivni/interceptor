@@ -34,9 +34,10 @@ type lossBasedBandwidthEstimator struct {
 type LossBasedBandwidthEstimatorOptions struct {
 	IncreaseLossThreshold float64
 	IncreaseTimeThreshold time.Duration
-	IncreaseFactor        float64
+	IncreaseBitrateChange int
 	DecreaseLossThreshold float64
 	DecreaseTimeThreshold time.Duration
+	DecreaseBitrateChange int
 }
 
 func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options *LossBasedBandwidthEstimatorOptions) *lossBasedBandwidthEstimator {
@@ -44,18 +45,19 @@ func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options
 		// constants from
 		// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
 		defaultOptions := LossBasedBandwidthEstimatorOptions{
-			IncreaseLossThreshold: 0.02,     
+			IncreaseLossThreshold: 0.02,
 			IncreaseTimeThreshold: 200 * time.Millisecond,
-			IncreaseFactor:        1.05,
-			DecreaseLossThreshold: 0.1,        
+			IncreaseBitrateChange: 250000,
+			DecreaseLossThreshold: 0.1,
 			DecreaseTimeThreshold: 200 * time.Millisecond,
+			DecreaseBitrateChange: 250000,
 		}
 		options = &defaultOptions
 	}
 
 	return &lossBasedBandwidthEstimator{
 		lock:           sync.Mutex{},
-		maxBitrate:     maxBitrate, 
+		maxBitrate:     maxBitrate,
 		minBitrate:     minBitrate,
 		bitrate:        initialBitrate,
 		averageLoss:    0,
@@ -107,13 +109,11 @@ func (e *lossBasedBandwidthEstimator) updateLossEstimate(results []cc.Acknowledg
 	if increaseLoss < e.options.IncreaseLossThreshold && time.Since(e.lastIncrease) > e.options.IncreaseTimeThreshold {
 		e.log.Infof("loss controller increasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
 		e.lastIncrease = time.Now()
-		//e.bitrate = clampInt(int(e.options.IncreaseFactor*float64(e.bitrate)), e.minBitrate, e.maxBitrate)
-		e.bitrate = clampInt(int(e.bitrate + 250000), e.minBitrate, e.maxBitrate)
+		e.bitrate = clampInt(int(e.bitrate+e.options.IncreaseBitrateChange), e.minBitrate, e.maxBitrate)
 	} else if decreaseLoss > e.options.DecreaseLossThreshold && time.Since(e.lastDecrease) > e.options.DecreaseTimeThreshold {
 		e.log.Infof("loss controller decreasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
 		e.lastDecrease = time.Now()
-		//e.bitrate = clampInt(int(float64(e.bitrate)*(1-0.5*decreaseLoss)), e.minBitrate, e.maxBitrate)
-		e.bitrate = clampInt(int(e.bitrate - 250000), e.minBitrate, e.maxBitrate)
+		e.bitrate = clampInt(int(e.bitrate-e.options.DecreaseBitrateChange), e.minBitrate, e.maxBitrate)
 	}
 }
 
