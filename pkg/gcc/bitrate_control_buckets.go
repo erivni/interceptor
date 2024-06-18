@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"time"
-
-	//"github.com/pion/logging"
 )
 
 type BitrateControlBucketsConfig struct {
@@ -33,7 +31,6 @@ type Manager struct {
 	bucketsKeys         []uint64
 	bucketIncrement     uint64
 	lastUnstableBitrate time.Time
-	//log                 logging.LeveledLogger
 }
 
 func NewManager(config *BitrateControlBucketsConfig) *Manager {
@@ -138,15 +135,9 @@ func (manager *Manager) HandleBitrateDecrease(bitrateKbps uint64) {
 }
 
 func (manager *Manager) CanIncreaseToBitrate(currentBitrate, nextBitrate uint64) error {
-	// logger := manager.log.WithFields(log.Fields{
-	// 	"subcomponent":   "bitrateControlBuckets",
-	// 	"currentBitrate": currentBitrate,
-	// 	"nextBitrate":    nextBitrate,
-	// })
 	_, bucket := manager.getBucket(currentBitrate)
 	if bucket == nil {
 		err := fmt.Errorf("bucket for current bitrate %d does not exist", currentBitrate)
-		//logger.Error(err.Error())
 		return err
 	}
 	if !bucket.stable {
@@ -155,7 +146,6 @@ func (manager *Manager) CanIncreaseToBitrate(currentBitrate, nextBitrate uint64)
 	_, bucket = manager.getBucket(nextBitrate)
 	if bucket == nil {
 		err := fmt.Errorf("bucket for next bitrate %d does not exist", nextBitrate)
-		//logger.Error(err.Error())
 		return err
 	}
 	secondsToUnblock := bucket.getSecondsToUnblock()
