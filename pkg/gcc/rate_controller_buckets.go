@@ -11,8 +11,8 @@ import (
 type RateControllerBucketsOptions struct {
 	IncreaseTimeThreshold time.Duration
 	DecreaseTimeThreshold time.Duration
-	BitrateChangeIncrease int
-	BitrateChangeDecrease int
+	IncreaseBitrateChange int
+	DecreaseBitrateChange int
 	BitrateControlBuckets *BitrateControlBucketsConfig
 }
 
@@ -45,8 +45,8 @@ func newRateControllerBuckets(now now, initialTargetBitrate, minBitrate, maxBitr
 		defaultOptions := RateControllerBucketsOptions{
 			IncreaseTimeThreshold: 100 * time.Millisecond,
 			DecreaseTimeThreshold: 100 * time.Millisecond,
-			BitrateChangeIncrease: 250000,
-			BitrateChangeDecrease: 250000,
+			IncreaseBitrateChange: 250000,
+			DecreaseBitrateChange: 250000,
 			BitrateControlBuckets: &BitrateControlBucketsConfig{
 				BitrateStableThreshold:              5 * 25,
 				HandleUnstableBitrateGracePeriodSec: 2,
@@ -164,7 +164,7 @@ func (c *rateControllerBuckets) increase(now time.Time) int {
 	rate := c.target
 	if time.Since(c.lastIncrease) > c.rateControllerOptions.IncreaseTimeThreshold {
 		c.lastIncrease = time.Now()
-		rate = c.target + c.rateControllerOptions.BitrateChangeIncrease
+		rate = c.target + c.rateControllerOptions.IncreaseBitrateChange
 	}
 	return rate
 }
@@ -173,7 +173,7 @@ func (c *rateControllerBuckets) decrease(now time.Time) int {
 	rate := c.target
 	if time.Since(c.lastDecrease) > c.rateControllerOptions.DecreaseTimeThreshold {
 		c.lastIncrease = time.Now()
-		rate = c.target - c.rateControllerOptions.BitrateChangeDecrease
+		rate = c.target - c.rateControllerOptions.DecreaseBitrateChange
 	}
 	return rate
 }
