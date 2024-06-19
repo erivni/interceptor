@@ -136,7 +136,7 @@ func (c *rateController) onDelayStats(ds DelayStats) {
 func (c *rateController) increase(now time.Time) int {
 	if c.latestDecreaseRate.average > 0 && float64(c.latestReceivedRate) > c.latestDecreaseRate.average-3*c.latestDecreaseRate.stdDeviation &&
 		float64(c.latestReceivedRate) < c.latestDecreaseRate.average+3*c.latestDecreaseRate.stdDeviation {
-		bitsPerFrame := float64(c.target) / 25.0
+		bitsPerFrame := float64(c.target) / 30.0
 		packetsPerFrame := math.Ceil(bitsPerFrame / (1200 * 8))
 		expectedPacketSizeBits := bitsPerFrame / packetsPerFrame
 
