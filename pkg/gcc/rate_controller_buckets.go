@@ -173,7 +173,7 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 
 func (c *rateControllerBuckets) increase(now time.Time) int {
 	rate := c.target
-	if time.Since(c.lastIncrease) > c.rateControllerOptions.IncreaseTimeThreshold {
+	if time.Since(c.lastIncrease) > c.rateControllerOptions.IncreaseTimeThreshold && time.Since(c.lastDecrease) > c.rateControllerOptions.DecreaseTimeThreshold {
 		c.lastIncrease = time.Now()
 		rate = c.target + c.rateControllerOptions.IncreaseBitrateChange
 	}
