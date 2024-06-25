@@ -19,16 +19,17 @@ type LossStats struct {
 }
 
 type lossBasedBandwidthEstimator struct {
-	lock           sync.Mutex
-	maxBitrate     int
-	minBitrate     int
-	bitrate        int
-	averageLoss    float64
-	lastLossUpdate time.Time
-	lastIncrease   time.Time
-	lastDecrease   time.Time
-	options        LossBasedBandwidthEstimatorOptions
-	log            logging.LeveledLogger
+	lock                         sync.Mutex
+	maxBitrate                   int
+	minBitrate                   int
+	bitrate                      int
+	averageLoss                  float64
+	lastLossUpdate               time.Time
+	lastIncrease                 time.Time
+	lastDecrease                 time.Time
+	options                      LossBasedBandwidthEstimatorOptions
+	bitrateControlBucketsManager *Manager
+	log                          logging.LeveledLogger
 }
 
 type LossBasedBandwidthEstimatorOptions struct {
@@ -38,6 +39,7 @@ type LossBasedBandwidthEstimatorOptions struct {
 	DecreaseLossThreshold float64
 	DecreaseTimeThreshold time.Duration
 	DecreaseBitrateChange int
+	BitrateControlBuckets *BitrateControlBucketsConfig
 }
 
 func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options *LossBasedBandwidthEstimatorOptions) *lossBasedBandwidthEstimator {
@@ -51,21 +53,31 @@ func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options
 			DecreaseLossThreshold: 0.1,
 			DecreaseTimeThreshold: 200 * time.Millisecond,
 			DecreaseBitrateChange: 250000,
+			BitrateControlBuckets: &BitrateControlBucketsConfig{
+				BitrateStableThreshold:              5 * 25,
+				HandleUnstableBitrateGracePeriodSec: 2,
+				BitrateBucketIncrement:              250000,
+				BackoffDurationsSec:                 []float64{0, 0, 15, 30, 60},
+			},
 		}
 		options = &defaultOptions
 	}
 
+	manager := NewManager(options.BitrateControlBuckets)
+	manager.InitializeBuckets(uint64(maxBitrate))
+
 	return &lossBasedBandwidthEstimator{
-		lock:           sync.Mutex{},
-		maxBitrate:     maxBitrate,
-		minBitrate:     minBitrate,
-		bitrate:        initialBitrate,
-		averageLoss:    0,
-		lastLossUpdate: time.Time{},
-		lastIncrease:   time.Time{},
-		lastDecrease:   time.Time{},
-		options:        *options,
-		log:            logging.NewDefaultLoggerFactory().NewLogger("gcc_loss_controller"),
+		lock:                         sync.Mutex{},
+		maxBitrate:                   maxBitrate,
+		minBitrate:                   minBitrate,
+		bitrate:                      initialBitrate,
+		averageLoss:                  0,
+		lastLossUpdate:               time.Time{},
+		lastIncrease:                 time.Time{},
+		lastDecrease:                 time.Time{},
+		options:                      *options,
+		bitrateControlBucketsManager: manager,
+		log:                          logging.NewDefaultLoggerFactory().NewLogger("gcc_loss_controller"),
 	}
 }
 
@@ -76,7 +88,11 @@ func (e *lossBasedBandwidthEstimator) getEstimate(wantedRate int) LossStats {
 	if e.bitrate <= 0 {
 		e.bitrate = clampInt(wantedRate, e.minBitrate, e.maxBitrate)
 	}
-	e.bitrate = minInt(wantedRate, e.bitrate)
+
+	if (wantedRate < e.bitrate) {
+		e.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(e.bitrate))
+		e.bitrate = wantedRate
+	}
 
 	return LossStats{
 		TargetBitrate: e.bitrate,
@@ -107,14 +123,21 @@ func (e *lossBasedBandwidthEstimator) updateLossEstimate(results []cc.Acknowledg
 	decreaseLoss := math.Min(e.averageLoss, lossRatio)
 
 	if increaseLoss < e.options.IncreaseLossThreshold && time.Since(e.lastIncrease) > e.options.IncreaseTimeThreshold {
+		e.bitrateControlBucketsManager.HandleBitrateNormal(uint64(e.bitrate))
 		e.log.Infof("loss controller increasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
-		e.lastIncrease = time.Now()
-		e.bitrate = clampInt(int(e.bitrate+e.options.IncreaseBitrateChange), e.minBitrate, e.maxBitrate)
+
+		suggestedTarget := clampInt(e.bitrate+e.options.IncreaseBitrateChange, e.minBitrate, e.maxBitrate)
+		err := e.bitrateControlBucketsManager.CanIncreaseToBitrate(uint64(e.bitrate), uint64(suggestedTarget))
+		if err == nil {
+			e.lastIncrease = time.Now()
+			e.bitrate = suggestedTarget
+		}
 	} else if decreaseLoss > e.options.DecreaseLossThreshold && time.Since(e.lastDecrease) > e.options.DecreaseTimeThreshold {
+		e.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(e.bitrate))
 		e.log.Infof("loss controller decreasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
 		e.lastDecrease = time.Now()
-		e.bitrate = clampInt(int(e.bitrate-e.options.DecreaseBitrateChange), e.minBitrate, e.maxBitrate)
-	}
+		e.bitrate = clampInt(e.bitrate-e.options.DecreaseBitrateChange, e.minBitrate, e.maxBitrate)
+	} 
 }
 
 func (e *lossBasedBandwidthEstimator) average(delta time.Duration, prev, sample float64) float64 {
