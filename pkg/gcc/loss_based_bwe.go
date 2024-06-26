@@ -89,11 +89,11 @@ func (e *lossBasedBandwidthEstimator) getEstimate(wantedRate int) LossStats {
 		e.bitrate = clampInt(wantedRate, e.minBitrate, e.maxBitrate)
 	}
 
-	if (wantedRate < e.bitrate) {
-		e.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(e.bitrate))
-		e.lastDecrease = time.Now()
-		e.bitrate = wantedRate
-	}
+	// if (wantedRate < e.bitrate) {
+	// 	e.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(e.bitrate))
+	// 	e.lastDecrease = time.Now()
+	// 	e.bitrate = wantedRate
+	// }
 
 	return LossStats{
 		TargetBitrate: e.bitrate,
