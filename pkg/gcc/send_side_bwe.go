@@ -26,6 +26,9 @@ const (
 // ErrSendSideBWEClosed is raised when SendSideBWE.WriteRTCP is called after SendSideBWE.Close
 var ErrSendSideBWEClosed = errors.New("SendSideBwe closed")
 
+var delayStatsMinMeasurement time.Duration = math.MaxInt32
+var delayStatsMaxMeasurement time.Duration = math.MinInt32
+
 // Pacer is the interface implemented by packet pacers
 type Pacer interface {
 	interceptor.RTPWriter
@@ -252,11 +255,20 @@ func (e *SendSideBWE) GetTargetBitrate() int {
 	return e.latestBitrate
 }
 
+// ResetStats resets some internal statistics of the bandwidth estimator
+func (e *SendSideBWE) ResetStats() {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+
+	// Reset min/max to capture next sampling
+	delayStatsMinMeasurement = math.MaxInt32
+	delayStatsMaxMeasurement = math.MinInt32
+}
+
 // GetStats returns some internal statistics of the bandwidth estimator
 func (e *SendSideBWE) GetStats() map[string]interface{} {
 	e.lock.Lock()
 	defer e.lock.Unlock()
-
 
 	averageLoss := e.latestStats.AverageLoss
 	if math.Abs(averageLoss) < 1e-10 {
@@ -264,16 +276,19 @@ func (e *SendSideBWE) GetStats() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"GccLatestRTT":          e.latestStats.DelayStats.LatestRTT,
-		"GccReceivedBitrate":    e.latestStats.DelayStats.ReceivedBitrate,
-		"GccLossTargetBitrate":  e.latestStats.LossStats.TargetBitrate,
-		"GccAverageLoss":        averageLoss,
-		"GccDelayTargetBitrate": e.latestStats.DelayStats.TargetBitrate,
-		"GccDelayMeasurement":   float64(e.latestStats.Measurement.Microseconds()) / 1000.0,
-		"GccDelayEstimate":      float64(e.latestStats.Estimate.Microseconds()) / 1000.0,
-		"GccDelayThreshold":     float64(e.latestStats.Threshold.Microseconds()) / 1000.0,
-		"GccUsage":              e.latestStats.Usage.String(),
-		"GccState":              e.latestStats.State.String(),
+		"GccLatestRTT":             e.latestStats.DelayStats.LatestRTT,
+		"GccReceivedBitrate":       e.latestStats.DelayStats.ReceivedBitrate,
+		"GccLossTargetBitrate":     e.latestStats.LossStats.TargetBitrate,
+		"GccAverageLoss":           averageLoss,
+		"GccDelayTargetBitrate":    e.latestStats.DelayStats.TargetBitrate,
+		"GccDelayMeasurement":      float64(e.latestStats.Measurement.Microseconds()) / 1000.0,
+		"GccDelayMinMeasurement":   float64(delayStatsMinMeasurement.Microseconds()) / 1000.0,
+		"GccDelayMaxMeasurement":   float64(delayStatsMaxMeasurement.Microseconds()) / 1000.0,
+		"GccDelayDeltaMeasurement": float64(time.Duration(delayStatsMaxMeasurement-delayStatsMinMeasurement).Microseconds()) / 1000.0,
+		"GccDelayEstimate":         float64(e.latestStats.Estimate.Microseconds()) / 1000.0,
+		"GccDelayThreshold":        float64(e.latestStats.Threshold.Microseconds()) / 1000.0,
+		"GccUsage":                 e.latestStats.Usage.String(),
+		"GccState":                 e.latestStats.State.String(),
 	}
 }
 
@@ -325,5 +340,12 @@ func (e *SendSideBWE) onDelayUpdate(delayStats DelayStats) {
 	e.latestStats = Stats{
 		LossStats:  lossStats,
 		DelayStats: delayStats,
+	}
+
+	if delayStats.Measurement < delayStatsMinMeasurement {
+		delayStatsMinMeasurement = delayStats.Measurement
+	}
+	if delayStats.Measurement > delayStatsMaxMeasurement {
+		delayStatsMaxMeasurement = delayStats.Measurement
 	}
 }
