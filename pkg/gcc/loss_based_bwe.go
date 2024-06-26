@@ -135,7 +135,7 @@ func (e *lossBasedBandwidthEstimator) updateLossEstimate(results []cc.Acknowledg
 			}
 		}
 	} else if decreaseLoss > e.options.DecreaseLossThreshold {
-		if time.Since(e.lastDecrease) > e.options.DecreaseTimeThreshold {
+		if time.Since(e.lastDecrease) > e.options.DecreaseTimeThreshold && e.bitrate > e.minBitrate {
 			e.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(e.bitrate))
 			e.log.Infof("loss controller decreasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
 			e.lastDecrease = time.Now()
