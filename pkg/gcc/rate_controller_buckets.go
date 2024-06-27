@@ -139,8 +139,11 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 		}
 
 	case stateDecrease:
-		c.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(c.target))
-		c.target = clampInt(c.decrease(now), c.minBitrate, c.maxBitrate)
+		suggestedTarget := clampInt(c.decrease(now), c.minBitrate, c.maxBitrate)
+		if suggestedTarget != c.target {
+			c.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(c.target))
+			c.target = suggestedTarget
+		}
 
 		next = DelayStats{
 			Measurement:      c.delayStats.Measurement,
