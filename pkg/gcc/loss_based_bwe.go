@@ -93,7 +93,6 @@ func (e *lossBasedBandwidthEstimator) getEstimate(wantedRate int) LossStats {
 	if (wantedRate < e.bitrate) {
 		currentBitrate,_ := e.bitrateControlBucketsManager.getBucket(uint64(e.bitrate))
 		if wantedRate < int(currentBitrate) {
-			e.bitrateControlBucketsManager.HandleBitrateDecrease(currentBitrate)
 			e.lastDecrease = time.Now()
 			e.bitrate = wantedRate
 		} else {
@@ -137,8 +136,15 @@ func (e *lossBasedBandwidthEstimator) updateLossEstimate(results []cc.Acknowledg
 		if time.Since(e.lastIncrease) > e.options.IncreaseTimeThreshold {
 			e.log.Infof("loss controller increasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v, currentBitrate: %v", e.averageLoss, decreaseLoss, increaseLoss, e.bitrate)
 			suggestedTarget := clampInt(int(1.05*float64(e.bitrate)), e.minBitrate, e.maxBitrate)
-			err := e.bitrateControlBucketsManager.CanIncreaseToBitrate(uint64(e.bitrate), uint64(suggestedTarget))
-			if err == nil {
+			currentBitrateBucket,_ := e.bitrateControlBucketsManager.getBucket(uint64(e.bitrate))
+			newBitrateBucket,_ := e.bitrateControlBucketsManager.getBucket(uint64(suggestedTarget))
+			if currentBitrateBucket != newBitrateBucket {
+				err := e.bitrateControlBucketsManager.CanIncreaseToBitrate(currentBitrateBucket, newBitrateBucket)
+				if err == nil {
+					e.lastIncrease = time.Now()
+					e.bitrate = suggestedTarget
+				}
+			} else {
 				e.lastIncrease = time.Now()
 				e.bitrate = suggestedTarget
 			}
