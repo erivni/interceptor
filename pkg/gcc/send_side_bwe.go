@@ -59,6 +59,8 @@ type SendSideBWE struct {
 	minBitrate    int
 	maxBitrate    int
 
+	lastBucketUpdate time.Time
+
 	overuseTime                   int
 	disableMeasurementUncertainty bool
 	rateCalculatorWindow          int
@@ -136,6 +138,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 		latestBitrate:                 latestBitrate,
 		minBitrate:                    minBitrate,
 		maxBitrate:                    maxBitrate,
+		lastBucketUpdate:              time.Now(),
 		overuseTime:                   10,
 		disableMeasurementUncertainty: false,
 		rateCalculatorWindow:          500,
@@ -280,6 +283,8 @@ func (e *SendSideBWE) GetStats() map[string]interface{} {
 		"GccReceivedBitrate":       e.latestStats.DelayStats.ReceivedBitrate,
 		"GccLossTargetBitrate":     e.latestStats.LossStats.TargetBitrate,
 		"GccAverageLoss":           averageLoss,
+		"GccDelayBucketStatus":     e.latestStats.DelayStats.BucketStatus,
+		"GccLossBucketStatus":      e.latestStats.LossStats.BucketStatus,
 		"GccDelayTargetBitrate":    e.latestStats.DelayStats.TargetBitrate,
 		"GccDelayMeasurement":      float64(e.latestStats.Measurement.Microseconds()) / 1000.0,
 		"GccDelayMinMeasurement":   float64(delayStatsMinMeasurement.Microseconds()) / 1000.0,
@@ -331,6 +336,11 @@ func (e *SendSideBWE) onDelayUpdate(delayStats DelayStats) {
 		bitrateChanged = true
 		e.latestBitrate = bitrate
 		e.pacer.SetTargetBitrate(e.latestBitrate)
+	}
+
+	if time.Since(e.lastBucketUpdate) > time.Duration(1 * time.Second) {
+		e.lossController.handleBitrate()
+		e.delayController.rateController.handleBitrate()
 	}
 
 	if bitrateChanged && e.onTargetBitrateChange != nil {

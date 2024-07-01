@@ -38,6 +38,8 @@ type rateControllerBuckets struct {
 	rateControllerOptions *RateControllerBucketsOptions
 
 	bitrateControlBucketsManager *Manager
+	currentBucketStatus          string
+	lastBucketUpdateBitrate      uint64
 }
 
 func newRateControllerBuckets(now now, initialTargetBitrate, minBitrate, maxBitrate int, rateControllerOptions *RateControllerBucketsOptions, dsw func(DelayStats)) *rateControllerBuckets {
@@ -74,6 +76,8 @@ func newRateControllerBuckets(now now, initialTargetBitrate, minBitrate, maxBitr
 		latestRTT:                    0,
 		latestReceivedRate:           0,
 		bitrateControlBucketsManager: manager,
+		currentBucketStatus:          "",
+		lastBucketUpdateBitrate:      uint64(initialTargetBitrate),
 
 		rateControllerOptions: rateControllerOptions,
 		lastIncrease:          time.Time{},
@@ -93,6 +97,19 @@ func (c *rateControllerBuckets) updateRTT(rtt time.Duration) {
 	c.latestRTT = rtt
 }
 
+func (c *rateControllerBuckets) handleBitrate() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	latestBitrate, _ := c.bitrateControlBucketsManager.getBucket(uint64(c.target))
+	if latestBitrate >= c.lastBucketUpdateBitrate {
+		c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
+	} else {
+		c.bitrateControlBucketsManager.HandleBitrateDecrease(c.lastBucketUpdateBitrate)
+	}
+	c.lastBucketUpdateBitrate = latestBitrate
+}
+
 func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 	now := time.Now()
 
@@ -106,7 +123,7 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 	c.delayStats.State = c.delayStats.State.transition(ds.Usage)
 
 	if c.delayStats.State == stateHold {
-		c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
+		// c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
 		return
 	}
 
@@ -114,16 +131,20 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 
 	c.lock.Lock()
 
+	c.currentBucketStatus = ""
+
 	switch c.delayStats.State {
 	case stateHold:
 		// should never occur due to check above, but makes the linter happy
 	case stateIncrease:
-		c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
+		// c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
 
 		suggestedTarget := clampInt(c.increase(now), c.minBitrate, c.maxBitrate)
 		err := c.bitrateControlBucketsManager.CanIncreaseToBitrate(uint64(c.target), uint64(suggestedTarget))
 		if err == nil {
 			c.target = suggestedTarget
+		} else {
+			c.currentBucketStatus = err.Error()
 		}
 
 		next = DelayStats{
@@ -136,14 +157,15 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 			TargetBitrate:    c.target,
 			ReceivedBitrate:  c.latestReceivedRate,
 			LatestRTT:        c.latestRTT,
+			BucketStatus:     c.currentBucketStatus,
 		}
 
 	case stateDecrease:
-		suggestedTarget := clampInt(c.decrease(now), c.minBitrate, c.maxBitrate)
-		if suggestedTarget != c.target {
-			c.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(c.target))
-			c.target = suggestedTarget
-		}
+		c.target = clampInt(c.decrease(now), c.minBitrate, c.maxBitrate)
+		// if suggestedTarget != c.target {
+		// 	c.bitrateControlBucketsManager.HandleBitrateDecrease(uint64(c.target))
+		// 	c.target = suggestedTarget
+		// }
 
 		next = DelayStats{
 			Measurement:      c.delayStats.Measurement,
@@ -155,6 +177,7 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 			TargetBitrate:    c.target,
 			ReceivedBitrate:  c.latestReceivedRate,
 			LatestRTT:        c.latestRTT,
+			BucketStatus:     c.currentBucketStatus,
 		}
 	}
 

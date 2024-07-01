@@ -24,6 +24,7 @@ type DelayStats struct {
 	TargetBitrate   int
 	ReceivedBitrate int
 	LatestRTT       time.Duration
+	BucketStatus    string
 }
 
 type now func() time.Time
