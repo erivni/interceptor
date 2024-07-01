@@ -45,7 +45,7 @@ type LossBasedBandwidthEstimatorOptions struct {
 	BitrateControlBuckets *BitrateControlBucketsConfig
 }
 
-func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options *LossBasedBandwidthEstimatorOptions) *lossBasedBandwidthEstimator {
+func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options *LossBasedBandwidthEstimatorOptions, bitrateControlBucketsManager *Manager) *lossBasedBandwidthEstimator {
 	if options == nil {
 		// constants from
 		// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
@@ -66,8 +66,8 @@ func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options
 		options = &defaultOptions
 	}
 
-	manager := NewManager(options.BitrateControlBuckets)
-	manager.InitializeBuckets(uint64(maxBitrate))
+	// manager := NewManager(options.BitrateControlBuckets)
+	// manager.InitializeBuckets(uint64(maxBitrate))
 
 	return &lossBasedBandwidthEstimator{
 		lock:                         sync.Mutex{},
@@ -81,7 +81,7 @@ func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options
 		lastIncrease:                 time.Time{},
 		lastDecrease:                 time.Time{},
 		options:                      *options,
-		bitrateControlBucketsManager: manager,
+		bitrateControlBucketsManager: bitrateControlBucketsManager,
 		log:                          logging.NewDefaultLoggerFactory().NewLogger("gcc_loss_controller"),
 	}
 }
@@ -106,6 +106,7 @@ func (e *lossBasedBandwidthEstimator) getEstimate(wantedRate int) LossStats {
 	// 		e.bitrate = wantedRate
 	// 	}
 	// }
+	e.bitrate = minInt(wantedRate, e.bitrate)
 
 	latestBitrate, _ := e.bitrateControlBucketsManager.getBucket(uint64(e.bitrate))
 

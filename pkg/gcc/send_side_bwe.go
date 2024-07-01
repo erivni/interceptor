@@ -59,7 +59,10 @@ type SendSideBWE struct {
 	minBitrate    int
 	maxBitrate    int
 
-	lastBucketUpdate time.Time
+	bitrateControlBuckets        *BitrateControlBucketsConfig
+	bitrateControlBucketsManager *Manager
+	lastBucketUpdate             time.Time
+	lastBucketUpdateBitrate      uint64
 
 	overuseTime                   int
 	disableMeasurementUncertainty bool
@@ -114,12 +117,13 @@ func SendSideBWELossBasedOptions(options *LossBasedBandwidthEstimatorOptions) Op
 }
 
 // SendSideBWELossBasedOptions sets the different configuration values for the loss based algorithm
-func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool, rateCalculatorWindow int, rateControllerOptions *RateControllerBucketsOptions) Option {
+func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool, rateCalculatorWindow int, rateControllerOptions *RateControllerBucketsOptions, bitrateControlBuckets *BitrateControlBucketsConfig) Option {
 	return func(e *SendSideBWE) error {
 		e.overuseTime = overuseTime
 		e.disableMeasurementUncertainty = disableMeasurementUncertainty
 		e.rateCalculatorWindow = rateCalculatorWindow
 		e.rateControllerOptions = rateControllerOptions
+		e.bitrateControlBuckets = bitrateControlBuckets
 		return nil
 	}
 }
@@ -139,6 +143,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 		minBitrate:                    minBitrate,
 		maxBitrate:                    maxBitrate,
 		lastBucketUpdate:              time.Now(),
+		lastBucketUpdateBitrate:       latestBitrate,
 		overuseTime:                   10,
 		disableMeasurementUncertainty: false,
 		rateCalculatorWindow:          500,
@@ -153,7 +158,19 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 	if e.pacer == nil {
 		e.pacer = NewLeakyBucketPacer(e.latestBitrate)
 	}
-	e.lossController = newLossBasedBWE(e.latestBitrate, e.minBitrate, e.maxBitrate, e.lossControllerOptions)
+	if e.bitrateControlBuckets == nil {
+		e.bitrateControlBuckets = &BitrateControlBucketsConfig{
+			BitrateStableThreshold:              10,
+			HandleUnstableBitrateGracePeriodSec: 5,
+			BitrateBucketIncrement:              250000,
+			BackoffDurationsSec:                 []float64{0, 30, 300, 1800},
+		}
+	}
+
+	e.bitrateControlBucketsManager = NewManager(e.bitrateControlBuckets)
+	e.bitrateControlBucketsManager.InitializeBuckets(uint64(maxBitrate))
+
+	e.lossController = newLossBasedBWE(e.latestBitrate, e.minBitrate, e.maxBitrate, e.lossControllerOptions, e.bitrateControlBucketsManager)
 	e.delayController = newDelayController(delayControllerConfig{
 		nowFn:                         time.Now,
 		initialBitrate:                e.latestBitrate,
@@ -163,7 +180,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 		disableMeasurementUncertainty: e.disableMeasurementUncertainty,
 		rateCalculatorWindow:          e.rateCalculatorWindow,
 		rateControllerOptions:         e.rateControllerOptions,
-	})
+	}, e.bitrateControlBucketsManager)
 
 	e.delayController.onUpdate(e.onDelayUpdate)
 
@@ -332,16 +349,28 @@ func (e *SendSideBWE) onDelayUpdate(delayStats DelayStats) {
 	lossStats := e.lossController.getEstimate(delayStats.TargetBitrate)
 	bitrateChanged := false
 	bitrate := minInt(delayStats.TargetBitrate, lossStats.TargetBitrate)
+	
+	e.delayController.rateController.handleBitrate(bitrate)
+
+	if time.Since(e.lastBucketUpdate) > time.Duration(1*time.Second) {
+		e.lastBucketUpdate = time.Now()
+
+		latestBitrate, _ := e.bitrateControlBucketsManager.getBucket(uint64(bitrate))
+		if bitrate >= int(e.lastBucketUpdateBitrate) {
+			e.bitrateControlBucketsManager.HandleBitrateNormal(uint64(e.latestBitrate))
+		} else {
+			e.bitrateControlBucketsManager.HandleBitrateDecrease(e.lastBucketUpdateBitrate)
+		}
+		e.lastBucketUpdateBitrate = latestBitrate
+
+		// e.lossController.handleBitrate()
+		// e.delayController.rateController.handleBitrate()
+	}
+
 	if bitrate != e.latestBitrate {
 		bitrateChanged = true
 		e.latestBitrate = bitrate
 		e.pacer.SetTargetBitrate(e.latestBitrate)
-	}
-
-	if time.Since(e.lastBucketUpdate) > time.Duration(1 * time.Second) {
-		e.lastBucketUpdate = time.Now()
-		e.lossController.handleBitrate()
-		e.delayController.rateController.handleBitrate()
 	}
 
 	if bitrateChanged && e.onTargetBitrateChange != nil {

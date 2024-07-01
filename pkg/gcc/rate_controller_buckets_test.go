@@ -44,11 +44,19 @@ func TestRateControllerBucketsRun(t *testing.T) {
 		t0 = t0.Add(100 * time.Millisecond)
 		return t0
 	}
+	manager := NewManager(&BitrateControlBucketsConfig{
+		BitrateStableThreshold:              5 * 25,
+		HandleUnstableBitrateGracePeriodSec: 2,
+		BitrateBucketIncrement:              250000,
+		BackoffDurationsSec:                 []float64{0, 0, 15, 30, 60},
+	})
+	manager.InitializeBuckets(uint64(maxBitrate))
+	
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			out := make(chan DelayStats)
-			dc := newRateControllerBuckets(mockNoFn, 100_000, 1_000, 50_000_000, nil, func(ds DelayStats) {
+			dc := newRateControllerBuckets(mockNoFn, 100_000, 1_000, 50_000_000, nil, manager, func(ds DelayStats) {
 				out <- ds
 			})
 			in := make(chan DelayStats)

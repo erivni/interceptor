@@ -42,7 +42,7 @@ type rateControllerBuckets struct {
 	lastBucketUpdateBitrate      uint64
 }
 
-func newRateControllerBuckets(now now, initialTargetBitrate, minBitrate, maxBitrate int, rateControllerOptions *RateControllerBucketsOptions, dsw func(DelayStats)) *rateControllerBuckets {
+func newRateControllerBuckets(now now, initialTargetBitrate, minBitrate, maxBitrate int, rateControllerOptions *RateControllerBucketsOptions, bitrateControlBucketsManager *Manager, dsw func(DelayStats)) *rateControllerBuckets {
 	if rateControllerOptions == nil {
 		defaultOptions := RateControllerBucketsOptions{
 			IncreaseTimeThreshold: 100 * time.Millisecond,
@@ -59,8 +59,8 @@ func newRateControllerBuckets(now now, initialTargetBitrate, minBitrate, maxBitr
 		rateControllerOptions = &defaultOptions
 	}
 
-	manager := NewManager(rateControllerOptions.BitrateControlBuckets)
-	manager.InitializeBuckets(uint64(maxBitrate))
+	// manager := NewManager(rateControllerOptions.BitrateControlBuckets)
+	// manager.InitializeBuckets(uint64(maxBitrate))
 
 	return &rateControllerBuckets{
 		now:                          now,
@@ -75,7 +75,7 @@ func newRateControllerBuckets(now now, initialTargetBitrate, minBitrate, maxBitr
 		lastState:                    stateIncrease,
 		latestRTT:                    0,
 		latestReceivedRate:           0,
-		bitrateControlBucketsManager: manager,
+		bitrateControlBucketsManager: bitrateControlBucketsManager,
 		currentBucketStatus:          "",
 		lastBucketUpdateBitrate:      uint64(initialTargetBitrate),
 
@@ -97,17 +97,19 @@ func (c *rateControllerBuckets) updateRTT(rtt time.Duration) {
 	c.latestRTT = rtt
 }
 
-func (c *rateControllerBuckets) handleBitrate() {
+func (c *rateControllerBuckets) handleBitrate(bitrate int) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	latestBitrate, _ := c.bitrateControlBucketsManager.getBucket(uint64(c.target))
-	if latestBitrate >= c.lastBucketUpdateBitrate {
-		c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
-	} else {
-		c.bitrateControlBucketsManager.HandleBitrateDecrease(c.lastBucketUpdateBitrate)
-	}
-	c.lastBucketUpdateBitrate = latestBitrate
+	c.target = minInt(bitrate, c.target)
+
+	// latestBitrate, _ := c.bitrateControlBucketsManager.getBucket(uint64(c.target))
+	// if latestBitrate >= c.lastBucketUpdateBitrate {
+	// 	c.bitrateControlBucketsManager.HandleBitrateNormal(uint64(c.target))
+	// } else {
+	// 	c.bitrateControlBucketsManager.HandleBitrateDecrease(c.lastBucketUpdateBitrate)
+	// }
+	// c.lastBucketUpdateBitrate = latestBitrate
 }
 
 func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {

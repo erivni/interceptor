@@ -54,7 +54,7 @@ type delayControllerConfig struct {
 	rateControllerOptions         *RateControllerBucketsOptions
 }
 
-func newDelayController(c delayControllerConfig) *delayController {
+func newDelayController(c delayControllerConfig, bitrateControlBucketsManager *Manager) *delayController {
 	ackPipe := make(chan []cc.Acknowledgment)
 	ackRatePipe := make(chan []cc.Acknowledgment)
 
@@ -68,7 +68,7 @@ func newDelayController(c delayControllerConfig) *delayController {
 		log:                     logging.NewDefaultLoggerFactory().NewLogger("gcc_delay_controller"),
 	}
 
-	rateController := newRateControllerBuckets(c.nowFn, c.initialBitrate, c.minBitrate, c.maxBitrate, c.rateControllerOptions, func(ds DelayStats) {
+	rateController := newRateControllerBuckets(c.nowFn, c.initialBitrate, c.minBitrate, c.maxBitrate, c.rateControllerOptions, bitrateControlBucketsManager, func(ds DelayStats) {
 		delayController.log.Infof("delaystats: %v", ds)
 		if delayController.onUpdateCallback != nil {
 			delayController.onUpdateCallback(ds)
