@@ -339,6 +339,7 @@ func (e *SendSideBWE) onDelayUpdate(delayStats DelayStats) {
 	}
 
 	if time.Since(e.lastBucketUpdate) > time.Duration(1 * time.Second) {
+		e.lastBucketUpdate = time.Now()
 		e.lossController.handleBitrate()
 		e.delayController.rateController.handleBitrate()
 	}
