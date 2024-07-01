@@ -100,6 +100,14 @@ func SendSideBWEMinBitrate(rate int) Option {
 	}
 }
 
+// SendSideBWEBucketConfig sets the config for the bucket manager
+func SendSideBWEBucketConfig(bitrateControlBuckets *BitrateControlBucketsConfig) Option {
+	return func(e *SendSideBWE) error {
+		e.bitrateControlBuckets = bitrateControlBuckets
+		return nil
+	}
+}
+
 // SendSideBWEPacer sets the pacing algorithm to use.
 func SendSideBWEPacer(p Pacer) Option {
 	return func(e *SendSideBWE) error {
@@ -117,13 +125,12 @@ func SendSideBWELossBasedOptions(options *LossBasedBandwidthEstimatorOptions) Op
 }
 
 // SendSideBWELossBasedOptions sets the different configuration values for the loss based algorithm
-func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool, rateCalculatorWindow int, rateControllerOptions *RateControllerBucketsOptions, bitrateControlBuckets *BitrateControlBucketsConfig) Option {
+func SendSideBWEDelayControllerOptions(overuseTime int, disableMeasurementUncertainty bool, rateCalculatorWindow int, rateControllerOptions *RateControllerBucketsOptions) Option {
 	return func(e *SendSideBWE) error {
 		e.overuseTime = overuseTime
 		e.disableMeasurementUncertainty = disableMeasurementUncertainty
 		e.rateCalculatorWindow = rateCalculatorWindow
 		e.rateControllerOptions = rateControllerOptions
-		e.bitrateControlBuckets = bitrateControlBuckets
 		return nil
 	}
 }
@@ -163,7 +170,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 			BitrateStableThreshold:              10,
 			HandleUnstableBitrateGracePeriodSec: 5,
 			BitrateBucketIncrement:              250000,
-			BackoffDurationsSec:                 []float64{0, 30, 300, 1800},
+			BackoffDurationsSec:                 []float64{0, 60, 300, 1800},
 		}
 	}
 
