@@ -350,7 +350,7 @@ func (e *SendSideBWE) onDelayUpdate(delayStats DelayStats) {
 	bitrateChanged := false
 	bitrate := minInt(delayStats.TargetBitrate, lossStats.TargetBitrate)
 	
-	e.delayController.rateController.handleBitrate(bitrate)
+	e.delayController.rateController.updateBitrate(bitrate)
 
 	if time.Since(e.lastBucketUpdate) > time.Duration(1*time.Second) {
 		e.lastBucketUpdate = time.Now()
@@ -362,9 +362,6 @@ func (e *SendSideBWE) onDelayUpdate(delayStats DelayStats) {
 			e.bitrateControlBucketsManager.HandleBitrateDecrease(e.lastBucketUpdateBitrate)
 		}
 		e.lastBucketUpdateBitrate = latestBitrate
-
-		// e.lossController.handleBitrate()
-		// e.delayController.rateController.handleBitrate()
 	}
 
 	if bitrate != e.latestBitrate {
