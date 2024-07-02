@@ -28,6 +28,7 @@ var ErrSendSideBWEClosed = errors.New("SendSideBwe closed")
 
 var delayStatsMinMeasurement time.Duration = math.MaxInt32
 var delayStatsMaxMeasurement time.Duration = math.MinInt32
+var delayStatsMinMaxReset bool = true
 
 // Pacer is the interface implemented by packet pacers
 type Pacer interface {
@@ -288,8 +289,7 @@ func (e *SendSideBWE) ResetStats() {
 	defer e.lock.Unlock()
 
 	// Reset min/max to capture next sampling
-	delayStatsMinMeasurement = math.MaxInt32
-	delayStatsMaxMeasurement = math.MinInt32
+	delayStatsMinMaxReset = true
 }
 
 // GetStats returns some internal statistics of the bandwidth estimator
@@ -386,10 +386,11 @@ func (e *SendSideBWE) onDelayUpdate(delayStats DelayStats) {
 		DelayStats: delayStats,
 	}
 
-	if delayStats.Measurement < delayStatsMinMeasurement {
+	if delayStatsMinMaxReset || delayStats.Measurement < delayStatsMinMeasurement {
 		delayStatsMinMeasurement = delayStats.Measurement
 	}
-	if delayStats.Measurement > delayStatsMaxMeasurement {
+	if delayStatsMinMaxReset || delayStats.Measurement > delayStatsMaxMeasurement {
 		delayStatsMaxMeasurement = delayStats.Measurement
 	}
+	delayStatsMinMaxReset = false
 }

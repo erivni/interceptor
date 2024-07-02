@@ -129,11 +129,18 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 
 	case stateIncrease:
 		suggestedTarget := clampInt(c.increase(now), c.minBitrate, c.maxBitrate)
-		err := c.bitrateControlBucketsManager.CanIncreaseToBitrate(uint64(c.target), uint64(suggestedTarget))
-		if err == nil {
-			c.target = suggestedTarget
+		currentBitrateBucket, _ := c.bitrateControlBucketsManager.getBucket(uint64(c.target))
+		newBitrateBucket, _ := c.bitrateControlBucketsManager.getBucket(uint64(suggestedTarget))
+		if currentBitrateBucket != newBitrateBucket {
+			err := c.bitrateControlBucketsManager.CanIncreaseToBitrate(uint64(c.target), uint64(suggestedTarget))
+			if err == nil {
+				c.target = suggestedTarget
+				currentBitrateBucket = newBitrateBucket
+			} else {
+				c.currentBucketStatus = err.Error()
+			}
 		} else {
-			c.currentBucketStatus = err.Error()
+			c.target = suggestedTarget
 		}
 
 		next = DelayStats{
@@ -143,7 +150,7 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 			LastReceiveDelta: c.delayStats.LastReceiveDelta,
 			Usage:            c.delayStats.Usage,
 			State:            c.delayStats.State,
-			TargetBitrate:    c.target,
+			TargetBitrate:    int(currentBitrateBucket),
 			ReceivedBitrate:  c.latestReceivedRate,
 			LatestRTT:        c.latestRTT,
 			BucketStatus:     c.currentBucketStatus,
@@ -151,6 +158,7 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 
 	case stateDecrease:
 		c.target = clampInt(c.decrease(now), c.minBitrate, c.maxBitrate)
+		latestBitrate, _ := c.bitrateControlBucketsManager.getBucket(uint64(c.target))
 
 		next = DelayStats{
 			Measurement:      c.delayStats.Measurement,
@@ -159,7 +167,7 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 			LastReceiveDelta: c.delayStats.LastReceiveDelta,
 			Usage:            c.delayStats.Usage,
 			State:            c.delayStats.State,
-			TargetBitrate:    c.target,
+			TargetBitrate:    int(latestBitrate),
 			ReceivedBitrate:  c.latestReceivedRate,
 			LatestRTT:        c.latestRTT,
 			BucketStatus:     c.currentBucketStatus,
