@@ -106,10 +106,6 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 	c.delayStats = ds
 	c.delayStats.State = c.delayStats.State.transition(ds.Usage)
 
-	if c.delayStats.State == stateHold {
-		return
-	}
-
 	var next DelayStats
 
 	c.lock.Lock()
@@ -118,7 +114,19 @@ func (c *rateControllerBuckets) onDelayStats(ds DelayStats) {
 
 	switch c.delayStats.State {
 	case stateHold:
-		// should never occur due to check above, but makes the linter happy
+		next = DelayStats{
+			Measurement:      c.delayStats.Measurement,
+			Estimate:         c.delayStats.Estimate,
+			Threshold:        c.delayStats.Threshold,
+			LastReceiveDelta: c.delayStats.LastReceiveDelta,
+			Usage:            c.delayStats.Usage,
+			State:            c.delayStats.State,
+			TargetBitrate:    c.target,
+			ReceivedBitrate:  c.latestReceivedRate,
+			LatestRTT:        c.latestRTT,
+			BucketStatus:     c.currentBucketStatus,
+		}
+
 	case stateIncrease:
 		suggestedTarget := clampInt(c.increase(now), c.minBitrate, c.maxBitrate)
 		err := c.bitrateControlBucketsManager.CanIncreaseToBitrate(uint64(c.target), uint64(suggestedTarget))
