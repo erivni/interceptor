@@ -16,56 +16,63 @@ import (
 type LossStats struct {
 	TargetBitrate int
 	AverageLoss   float64
+	BucketStatus  string
 }
 
 type lossBasedBandwidthEstimator struct {
-	lock           sync.Mutex
-	maxBitrate     int
-	minBitrate     int
-	bitrate        int
-	averageLoss    float64
-	lastLossUpdate time.Time
-	lastIncrease   time.Time
-	lastDecrease   time.Time
-	options        LossBasedBandwidthEstimatorOptions
-	log            logging.LeveledLogger
+	lock                         sync.Mutex
+	maxBitrate                   int
+	minBitrate                   int
+	bitrate                      int
+	currentBucketStatus          string
+	lastBucketUpdateBitrate      uint64
+	averageLoss                  float64
+	lastLossUpdate               time.Time
+	lastIncrease                 time.Time
+	lastDecrease                 time.Time
+	options                      LossBasedBandwidthEstimatorOptions
+	bitrateControlBucketsManager *Manager
+	log                          logging.LeveledLogger
 }
 
 type LossBasedBandwidthEstimatorOptions struct {
 	IncreaseLossThreshold float64
 	IncreaseTimeThreshold time.Duration
-	IncreaseBitrateChange int
+	IncreaseFactor        float64
 	DecreaseLossThreshold float64
 	DecreaseTimeThreshold time.Duration
-	DecreaseBitrateChange int
+	DecreaseFactor        float64
 }
 
-func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options *LossBasedBandwidthEstimatorOptions) *lossBasedBandwidthEstimator {
+func newLossBasedBWE(initialBitrate int, minBitrate int, maxBitrate int, options *LossBasedBandwidthEstimatorOptions, bitrateControlBucketsManager *Manager) *lossBasedBandwidthEstimator {
 	if options == nil {
 		// constants from
 		// https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-02#section-6
 		defaultOptions := LossBasedBandwidthEstimatorOptions{
 			IncreaseLossThreshold: 0.02,
 			IncreaseTimeThreshold: 200 * time.Millisecond,
-			IncreaseBitrateChange: 250000,
+			IncreaseFactor:        1.05,
 			DecreaseLossThreshold: 0.1,
 			DecreaseTimeThreshold: 200 * time.Millisecond,
-			DecreaseBitrateChange: 250000,
+			DecreaseFactor:        1.0,
 		}
 		options = &defaultOptions
 	}
 
 	return &lossBasedBandwidthEstimator{
-		lock:           sync.Mutex{},
-		maxBitrate:     maxBitrate,
-		minBitrate:     minBitrate,
-		bitrate:        initialBitrate,
-		averageLoss:    0,
-		lastLossUpdate: time.Time{},
-		lastIncrease:   time.Time{},
-		lastDecrease:   time.Time{},
-		options:        *options,
-		log:            logging.NewDefaultLoggerFactory().NewLogger("gcc_loss_controller"),
+		lock:                         sync.Mutex{},
+		maxBitrate:                   maxBitrate,
+		minBitrate:                   minBitrate,
+		bitrate:                      initialBitrate,
+		currentBucketStatus:          "",
+		lastBucketUpdateBitrate:      uint64(initialBitrate),
+		averageLoss:                  0,
+		lastLossUpdate:               time.Time{},
+		lastIncrease:                 time.Time{},
+		lastDecrease:                 time.Time{},
+		options:                      *options,
+		bitrateControlBucketsManager: bitrateControlBucketsManager,
+		log:                          logging.NewDefaultLoggerFactory().NewLogger("gcc_loss_controller"),
 	}
 }
 
@@ -76,11 +83,15 @@ func (e *lossBasedBandwidthEstimator) getEstimate(wantedRate int) LossStats {
 	if e.bitrate <= 0 {
 		e.bitrate = clampInt(wantedRate, e.minBitrate, e.maxBitrate)
 	}
+
 	e.bitrate = minInt(wantedRate, e.bitrate)
 
+	latestBitrate, _ := e.bitrateControlBucketsManager.getBucket(uint64(e.bitrate))
+
 	return LossStats{
-		TargetBitrate: e.bitrate,
+		TargetBitrate: int(latestBitrate),
 		AverageLoss:   e.averageLoss,
+		BucketStatus:  e.currentBucketStatus,
 	}
 }
 
@@ -106,14 +117,33 @@ func (e *lossBasedBandwidthEstimator) updateLossEstimate(results []cc.Acknowledg
 	increaseLoss := math.Max(e.averageLoss, lossRatio)
 	decreaseLoss := math.Min(e.averageLoss, lossRatio)
 
-	if increaseLoss < e.options.IncreaseLossThreshold && time.Since(e.lastIncrease) > e.options.IncreaseTimeThreshold {
-		e.log.Infof("loss controller increasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
-		e.lastIncrease = time.Now()
-		e.bitrate = clampInt(int(e.bitrate+e.options.IncreaseBitrateChange), e.minBitrate, e.maxBitrate)
-	} else if decreaseLoss > e.options.DecreaseLossThreshold && time.Since(e.lastDecrease) > e.options.DecreaseTimeThreshold {
-		e.log.Infof("loss controller decreasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v", e.averageLoss, decreaseLoss, increaseLoss)
-		e.lastDecrease = time.Now()
-		e.bitrate = clampInt(int(e.bitrate-e.options.DecreaseBitrateChange), e.minBitrate, e.maxBitrate)
+	e.currentBucketStatus = ""
+
+	if increaseLoss < e.options.IncreaseLossThreshold {
+		if time.Since(e.lastIncrease) > e.options.IncreaseTimeThreshold {
+			e.log.Infof("loss controller increasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v, currentBitrate: %v", e.averageLoss, decreaseLoss, increaseLoss, e.bitrate)
+			suggestedTarget := clampInt(int(e.options.IncreaseFactor*float64(e.bitrate)), e.minBitrate, e.maxBitrate)
+			currentBitrateBucket, _ := e.bitrateControlBucketsManager.getBucket(uint64(e.bitrate))
+			newBitrateBucket, _ := e.bitrateControlBucketsManager.getBucket(uint64(suggestedTarget))
+			if currentBitrateBucket != newBitrateBucket {
+				err := e.bitrateControlBucketsManager.CanIncreaseToBitrate(currentBitrateBucket, newBitrateBucket)
+				if err == nil {
+					e.lastIncrease = time.Now()
+					e.bitrate = suggestedTarget
+				} else {
+					e.currentBucketStatus = err.Error()
+				}
+			} else {
+				e.lastIncrease = time.Now()
+				e.bitrate = suggestedTarget
+			}
+		}
+	} else if decreaseLoss > e.options.DecreaseLossThreshold {
+		if time.Since(e.lastDecrease) > e.options.DecreaseTimeThreshold {
+			e.log.Infof("loss controller decreasing; averageLoss: %v, decreaseLoss: %v, increaseLoss: %v, currentBitrate: %v", e.averageLoss, decreaseLoss, increaseLoss, e.bitrate)
+			e.lastDecrease = time.Now()
+			e.bitrate = clampInt(int(float64(e.bitrate)*(1.0-e.options.DecreaseFactor*decreaseLoss)), e.minBitrate, e.maxBitrate)
+		}
 	}
 }
 

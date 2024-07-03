@@ -28,6 +28,7 @@ var ErrSendSideBWEClosed = errors.New("SendSideBwe closed")
 
 var delayStatsMinMeasurement time.Duration = math.MaxInt32
 var delayStatsMaxMeasurement time.Duration = math.MinInt32
+var delayStatsMinMaxReset bool = true
 
 // Pacer is the interface implemented by packet pacers
 type Pacer interface {
@@ -58,6 +59,11 @@ type SendSideBWE struct {
 	latestBitrate int
 	minBitrate    int
 	maxBitrate    int
+
+	bitrateControlBuckets        *BitrateControlBucketsConfig
+	bitrateControlBucketsManager *Manager
+	lastBucketUpdate             time.Time
+	lastBucketUpdateBitrate      uint64
 
 	overuseTime                   int
 	disableMeasurementUncertainty bool
@@ -91,6 +97,14 @@ func SendSideBWEMaxBitrate(rate int) Option {
 func SendSideBWEMinBitrate(rate int) Option {
 	return func(e *SendSideBWE) error {
 		e.minBitrate = rate
+		return nil
+	}
+}
+
+// SendSideBWEBucketConfig sets the config for the bucket manager
+func SendSideBWEBucketConfig(bitrateControlBuckets *BitrateControlBucketsConfig) Option {
+	return func(e *SendSideBWE) error {
+		e.bitrateControlBuckets = bitrateControlBuckets
 		return nil
 	}
 }
@@ -136,6 +150,8 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 		latestBitrate:                 latestBitrate,
 		minBitrate:                    minBitrate,
 		maxBitrate:                    maxBitrate,
+		lastBucketUpdate:              time.Now(),
+		lastBucketUpdateBitrate:       latestBitrate,
 		overuseTime:                   10,
 		disableMeasurementUncertainty: false,
 		rateCalculatorWindow:          500,
@@ -150,7 +166,19 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 	if e.pacer == nil {
 		e.pacer = NewLeakyBucketPacer(e.latestBitrate)
 	}
-	e.lossController = newLossBasedBWE(e.latestBitrate, e.minBitrate, e.maxBitrate, e.lossControllerOptions)
+	if e.bitrateControlBuckets == nil {
+		e.bitrateControlBuckets = &BitrateControlBucketsConfig{
+			BitrateStableThreshold:              10,
+			HandleUnstableBitrateGracePeriodSec: 5,
+			BitrateBucketIncrement:              250000,
+			BackoffDurationsSec:                 []float64{0, 60, 300, 1800},
+		}
+	}
+
+	e.bitrateControlBucketsManager = NewManager(e.bitrateControlBuckets)
+	e.bitrateControlBucketsManager.InitializeBuckets(uint64(maxBitrate))
+
+	e.lossController = newLossBasedBWE(e.latestBitrate, e.minBitrate, e.maxBitrate, e.lossControllerOptions, e.bitrateControlBucketsManager)
 	e.delayController = newDelayController(delayControllerConfig{
 		nowFn:                         time.Now,
 		initialBitrate:                e.latestBitrate,
@@ -160,7 +188,7 @@ func NewSendSideBWE(opts ...Option) (*SendSideBWE, error) {
 		disableMeasurementUncertainty: e.disableMeasurementUncertainty,
 		rateCalculatorWindow:          e.rateCalculatorWindow,
 		rateControllerOptions:         e.rateControllerOptions,
-	})
+	}, e.bitrateControlBucketsManager)
 
 	e.delayController.onUpdate(e.onDelayUpdate)
 
@@ -261,8 +289,7 @@ func (e *SendSideBWE) ResetStats() {
 	defer e.lock.Unlock()
 
 	// Reset min/max to capture next sampling
-	delayStatsMinMeasurement = math.MaxInt32
-	delayStatsMaxMeasurement = math.MinInt32
+	delayStatsMinMaxReset = true
 }
 
 // GetStats returns some internal statistics of the bandwidth estimator
@@ -280,6 +307,8 @@ func (e *SendSideBWE) GetStats() map[string]interface{} {
 		"GccReceivedBitrate":       e.latestStats.DelayStats.ReceivedBitrate,
 		"GccLossTargetBitrate":     e.latestStats.LossStats.TargetBitrate,
 		"GccAverageLoss":           averageLoss,
+		"GccDelayBucketStatus":     e.latestStats.DelayStats.BucketStatus,
+		"GccLossBucketStatus":      e.latestStats.LossStats.BucketStatus,
 		"GccDelayTargetBitrate":    e.latestStats.DelayStats.TargetBitrate,
 		"GccDelayMeasurement":      float64(e.latestStats.Measurement.Microseconds()) / 1000.0,
 		"GccDelayMinMeasurement":   float64(delayStatsMinMeasurement.Microseconds()) / 1000.0,
@@ -327,6 +356,21 @@ func (e *SendSideBWE) onDelayUpdate(delayStats DelayStats) {
 	lossStats := e.lossController.getEstimate(delayStats.TargetBitrate)
 	bitrateChanged := false
 	bitrate := minInt(delayStats.TargetBitrate, lossStats.TargetBitrate)
+	
+	e.delayController.rateController.updateBitrate(bitrate)
+
+	if time.Since(e.lastBucketUpdate) > time.Duration(1*time.Second) {
+		e.lastBucketUpdate = time.Now()
+
+		latestBitrate, _ := e.bitrateControlBucketsManager.getBucket(uint64(bitrate))
+		if bitrate >= int(e.lastBucketUpdateBitrate) {
+			e.bitrateControlBucketsManager.HandleBitrateNormal(uint64(e.latestBitrate))
+		} else {
+			e.bitrateControlBucketsManager.HandleBitrateDecrease(e.lastBucketUpdateBitrate)
+		}
+		e.lastBucketUpdateBitrate = latestBitrate
+	}
+
 	if bitrate != e.latestBitrate {
 		bitrateChanged = true
 		e.latestBitrate = bitrate
@@ -342,10 +386,11 @@ func (e *SendSideBWE) onDelayUpdate(delayStats DelayStats) {
 		DelayStats: delayStats,
 	}
 
-	if delayStats.Measurement < delayStatsMinMeasurement {
+	if delayStatsMinMaxReset || delayStats.Measurement < delayStatsMinMeasurement {
 		delayStatsMinMeasurement = delayStats.Measurement
 	}
-	if delayStats.Measurement > delayStatsMaxMeasurement {
+	if delayStatsMinMaxReset || delayStats.Measurement > delayStatsMaxMeasurement {
 		delayStatsMaxMeasurement = delayStats.Measurement
 	}
+	delayStatsMinMaxReset = false
 }
