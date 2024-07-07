@@ -173,6 +173,11 @@ func (f *FeedbackAdapter) OnTransportCCFeedback(_ time.Time, feedback *rtcp.Tran
 		}
 	}
 
+	// if (len(result) > int(feedback.PacketStatusCount)) {
+	// 	// Log 
+	// }
+	result = result[:min(len(result), int(feedback.PacketStatusCount))]
+
 	return result, nil
 }
 
@@ -264,4 +269,11 @@ func (f *feedbackHistory) removeOldest() {
 			delete(f.items, key)
 		}
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
