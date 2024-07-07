@@ -173,9 +173,8 @@ func (f *FeedbackAdapter) OnTransportCCFeedback(_ time.Time, feedback *rtcp.Tran
 		}
 	}
 
-	// if (len(result) > int(feedback.PacketStatusCount)) {
-	// 	// Log 
-	// }
+	// The last chunk can contain less than 7/14 packets. Therefore, the total results should be capped 
+	// the amount of packets reported in the feedback report and not based on the chunk data.
 	result = result[:min(len(result), int(feedback.PacketStatusCount))]
 
 	return result, nil
