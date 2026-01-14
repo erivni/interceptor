@@ -56,3 +56,13 @@ func DisableCopy() ResponderOption {
 		return nil
 	}
 }
+
+func ResponderBufferPoolManager(p *sync.Pool) ResponderOption {
+	return func(s *ResponderInterceptor) error {
+		if p == nil {
+			return nil
+		}
+		s.packetFactory = newPacketPoolManager(p)
+		return nil
+	}
+}

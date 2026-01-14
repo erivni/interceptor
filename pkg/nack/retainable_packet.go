@@ -130,3 +130,52 @@ func (p *retainablePacket) Release() {
 		p.payload = nil
 	}
 }
+
+type packetPoolManager struct {
+	headerPool  *sync.Pool
+	payloadPool *sync.Pool
+}
+
+func newPacketPoolManager(payloadPool *sync.Pool) *packetPoolManager {
+	return &packetPoolManager{
+		headerPool: &sync.Pool{
+			New: func() interface{} {
+				return &rtp.Header{}
+			},
+		},
+		payloadPool: payloadPool,
+	}
+}
+
+func (m *packetPoolManager) NewPacket(header *rtp.Header, payload []byte) (*retainablePacket, error) {
+	if len(payload) > maxPayloadLen {
+		return nil, io.ErrShortBuffer
+	}
+
+	p := &retainablePacket{
+		onRelease: m.releasePacket,
+		// new packets have retain count of 1
+		count: 1,
+	}
+
+	var ok bool
+	p.header, ok = m.headerPool.Get().(*rtp.Header)
+	if !ok {
+		return nil, errFailedToCastHeaderPool
+	}
+
+	*p.header = header.Clone()
+	p.payload = payload
+	p.buffer = &payload
+
+	return p, nil
+}
+
+func (m *packetPoolManager) releasePacket(header *rtp.Header, payload *[]byte) {
+	m.headerPool.Put(header)
+	if payload != nil {
+		capacity := cap(*payload)
+		recapped_buff := (*payload)[:capacity]
+		m.payloadPool.Put(recapped_buff)
+	}
+}
